@@ -12,7 +12,18 @@
   "vulnerabilityAlerts": {
     "enabled": true
   },
-  "labels": [
-    "dependencies"
+  "packageRules": [
+    {
+      "matchManagers": ["gomod"],
+      "addLabels": ["dependencies", "deps:go-modules"]
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "addLabels": ["dependencies", "deps:github-actions"]
+    },
+    {
+      "matchManagers": ["dockerfile"],
+      "addLabels": ["dependencies", "deps:docker"]
+    }
   ]
 }
