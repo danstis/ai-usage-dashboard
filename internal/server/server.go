@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/danstis/ai-usage-dashboard/internal/api"
+	"github.com/danstis/ai-usage-dashboard/internal/docs"
 )
 
 // New constructs the top-level HTTP handler for the service, serving the
@@ -14,6 +15,8 @@ import (
 func New(providers api.ProviderRepository) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealthz)
+	mux.HandleFunc("GET /docs", docs.HandleUI)
+	mux.HandleFunc("GET /docs/openapi.yaml", docs.HandleSpec)
 	mux.Handle("/api/v1/", api.NewHandler(providers))
 	return mux
 }
