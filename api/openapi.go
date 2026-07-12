@@ -6,7 +6,7 @@
 // generate; this file only exposes its bytes to the rest of the module.
 package openapi
 
-import _ "embed"
+import _ "embed" // enables the go:embed directive below
 
 // Spec holds the raw bytes of the committed api/openapi.yaml document.
 //

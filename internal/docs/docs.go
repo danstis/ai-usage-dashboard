@@ -5,7 +5,7 @@
 package docs
 
 import (
-	_ "embed"
+	_ "embed" // enables the go:embed directive below
 	"net/http"
 
 	openapi "github.com/danstis/ai-usage-dashboard/api"
