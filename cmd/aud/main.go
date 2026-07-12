@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/danstis/ai-usage-dashboard/internal/api"
+	"github.com/danstis/ai-usage-dashboard/internal/provider"
 	"github.com/danstis/ai-usage-dashboard/internal/server"
 	"github.com/danstis/ai-usage-dashboard/internal/store/sqlite"
 )
@@ -80,9 +82,14 @@ func run(ctx context.Context) error {
 		}
 	}()
 
+	providerSvc := provider.NewService(db, provider.Registry)
+	if err := providerSvc.Reconcile(context.Background()); err != nil {
+		return fmt.Errorf("reconcile providers: %w", err)
+	}
+
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.port,
-		Handler:           server.New(),
+		Handler:           server.New(api.NewProviderRepository(providerSvc)),
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       readTimeout,
 		WriteTimeout:      writeTimeout,

@@ -9,11 +9,12 @@ import (
 	"github.com/danstis/ai-usage-dashboard/internal/api"
 )
 
-// New constructs the top-level HTTP handler for the service.
-func New() http.Handler {
+// New constructs the top-level HTTP handler for the service, serving the
+// provider registry endpoints from providers.
+func New(providers api.ProviderRepository) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealthz)
-	mux.Handle("/api/v1/", api.NewHandler(api.NewInMemoryProviderLister()))
+	mux.Handle("/api/v1/", api.NewHandler(providers))
 	return mux
 }
 

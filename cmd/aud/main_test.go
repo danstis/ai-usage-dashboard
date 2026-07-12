@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/danstis/ai-usage-dashboard/internal/provider"
 )
 
 func TestLoadConfig_Defaults(t *testing.T) {
@@ -314,6 +317,59 @@ func TestRun_GracefulShutdown(t *testing.T) {
 	case err := <-runErr:
 		if err != nil {
 			t.Fatalf("run() returned error on clean shutdown: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("run() did not return within 5s of context cancellation")
+	}
+}
+
+// TestRun_ReconcilesAndServesProviders is the P1 acceptance path exercised
+// end-to-end through run(): boot reconciles the compiled-in registry into a
+// fresh store, and GET /api/v1/providers lists every seeded provider,
+// disabled by default.
+func TestRun_ReconcilesAndServesProviders(t *testing.T) {
+	port := freePort(t)
+	t.Setenv("AUD_HTTP_PORT", port)
+	t.Setenv("AUD_DB_PATH", filepath.Join(t.TempDir(), "aud.db"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- run(ctx)
+	}()
+
+	waitForServer(t, "127.0.0.1:"+port, 5*time.Second)
+
+	resp, err := http.Get("http://127.0.0.1:" + port + "/api/v1/providers") //nolint:gosec // test-only loopback call
+	if err != nil {
+		t.Fatalf("GET /api/v1/providers: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, resp.StatusCode)
+	}
+
+	var providers []struct {
+		ID      string `json:"id"`
+		Enabled bool   `json:"enabled"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&providers); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(providers) != len(provider.Registry) {
+		t.Fatalf("expected %d seeded providers, got %d: %+v", len(provider.Registry), len(providers), providers)
+	}
+	for _, p := range providers {
+		if p.Enabled {
+			t.Errorf("expected provider %q to default to disabled, got enabled", p.ID)
+		}
+	}
+
+	cancel()
+	select {
+	case err := <-runErr:
+		if err != nil {
+			t.Fatalf("run() returned error on shutdown: %v", err)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("run() did not return within 5s of context cancellation")

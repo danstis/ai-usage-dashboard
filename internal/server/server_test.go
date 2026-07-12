@@ -1,19 +1,41 @@
 package server_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/danstis/ai-usage-dashboard/internal/api"
 	"github.com/danstis/ai-usage-dashboard/internal/server"
 )
+
+// stubProviderRepository is a no-op api.ProviderRepository, sufficient for
+// exercising routes (like /healthz) that don't depend on provider state.
+type stubProviderRepository struct{}
+
+func (stubProviderRepository) ListProviders(_ context.Context) ([]api.Provider, error) {
+	return nil, nil
+}
+
+func (stubProviderRepository) GetProvider(_ context.Context, _ string) (api.Provider, error) {
+	return api.Provider{}, nil
+}
+
+func (stubProviderRepository) EnableProvider(_ context.Context, _ string) (api.Provider, error) {
+	return api.Provider{}, nil
+}
+
+func (stubProviderRepository) DisableProvider(_ context.Context, _ string) (api.Provider, error) {
+	return api.Provider{}, nil
+}
 
 func TestHealthz(t *testing.T) {
 	t.Parallel()
 
-	handler := server.New()
+	handler := server.New(stubProviderRepository{})
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
@@ -56,7 +78,7 @@ func (w *errWriter) Write([]byte) (int, error) {
 func TestHealthz_EncodeErrorDoesNotPanic(t *testing.T) {
 	t.Parallel()
 
-	handler := server.New()
+	handler := server.New(stubProviderRepository{})
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	w := &errWriter{header: http.Header{}}

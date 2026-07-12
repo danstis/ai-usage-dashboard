@@ -63,3 +63,11 @@ func decodeProviders(t *testing.T, rec *httptest.ResponseRecorder) []Provider {
 	}
 	return providers
 }
+
+// decodeInto decodes rec's body into v.
+func decodeInto(t *testing.T, rec *httptest.ResponseRecorder, v any) {
+	t.Helper()
+	if err := json.NewDecoder(rec.Body).Decode(v); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+}
