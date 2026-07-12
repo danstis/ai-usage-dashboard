@@ -35,6 +35,9 @@ jobs:
         with:
           version: v2.12.2
 
+      - name: Spec lint
+        run: make spec-lint
+
       - name: SonarQube Scan
         if: ${{ env.SONAR_TOKEN != '' }}
         uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6
