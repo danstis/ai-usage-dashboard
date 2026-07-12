@@ -30,16 +30,35 @@ const (
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	slog.SetDefault(logger)
-
-	if err := run(); err != nil {
-		logger.Error("service exited with error", "error", err)
+	if err := bootstrap(context.Background()); err != nil {
+		// bootstrap() already logs the error; main() only sets the exit code.
 		os.Exit(1)
 	}
 }
 
-func run() error {
+// bootstrap is the testable body of main(): it configures the default logger,
+// wires SIGINT/SIGTERM to a cancellable context (derived from parent), and
+// invokes run. Tests call it with an already-cancelled parent context to
+// exercise the clean-shutdown return path without invoking main()'s os.Exit
+// branch.
+func bootstrap(parent context.Context) error {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+
+	ctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := run(ctx); err != nil {
+		logger.Error("service exited with error", "error", err)
+		return err
+	}
+	return nil
+}
+
+// run starts the HTTP server and blocks until ctx is cancelled or the
+// listener returns a non-graceful error. It returns nil on a clean shutdown
+// or the listener error otherwise.
+func run(ctx context.Context) error {
 	cfg, err := loadConfig()
 	if err != nil {
 		return err
@@ -54,9 +73,6 @@ func run() error {
 		WriteTimeout:      writeTimeout,
 		IdleTimeout:       idleTimeout,
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	serveErr := make(chan error, 1)
 	go func() {

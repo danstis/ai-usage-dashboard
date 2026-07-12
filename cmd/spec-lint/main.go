@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/danstis/ai-usage-dashboard/internal/specvalidate"
@@ -13,15 +14,26 @@ import (
 const defaultSpecPath = "api/openapi.yaml"
 
 func main() {
+	if err := run(os.Args, os.Stdout, os.Stderr); err != nil {
+		os.Exit(1)
+	}
+}
+
+// run is the testable body of main(): it picks the spec path from args,
+// validates the spec, and writes a status line to stdout/stderr. It returns
+// the validation error (if any) so tests can assert on it without invoking
+// main()'s os.Exit branch.
+func run(args []string, stdout, stderr io.Writer) error {
 	path := defaultSpecPath
-	if len(os.Args) > 1 {
-		path = os.Args[1]
+	if len(args) > 1 {
+		path = args[1]
 	}
 
 	if err := specvalidate.Validate(context.Background(), path); err != nil {
-		fmt.Fprintf(os.Stderr, "spec-lint: %s: %v\n", path, err)
-		os.Exit(1)
+		_, _ = fmt.Fprintf(stderr, "spec-lint: %s: %v\n", path, err)
+		return err
 	}
 
-	fmt.Printf("spec-lint: %s: OK\n", path)
+	_, _ = fmt.Fprintf(stdout, "spec-lint: %s: OK\n", path)
+	return nil
 }
