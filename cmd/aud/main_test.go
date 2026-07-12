@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -266,8 +268,25 @@ func TestRun_ConfigErrorReturnsEarly(t *testing.T) {
 	}
 }
 
+func TestRun_StoreOpenErrorReturnsEarly(t *testing.T) {
+	// A db path nested under a regular file can never have its parent
+	// directory created, forcing sqlite.New to fail before the listener
+	// starts.
+	blocker := filepath.Join(t.TempDir(), "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatalf("create blocker file: %v", err)
+	}
+	t.Setenv("AUD_DB_PATH", filepath.Join(blocker, "nested", "aud.db"))
+
+	err := run(context.Background())
+	if err == nil {
+		t.Fatal("expected run() to return error when the store fails to open, got nil")
+	}
+}
+
 func TestRun_ListenErrorReturnsError(t *testing.T) {
 	t.Setenv("AUD_HTTP_PORT", "not-a-valid-port-format-at-all")
+	t.Setenv("AUD_DB_PATH", filepath.Join(t.TempDir(), "aud.db"))
 
 	err := run(context.Background())
 	if err == nil {
@@ -279,6 +298,7 @@ func TestRun_GracefulShutdown(t *testing.T) {
 	port := freePort(t)
 	t.Setenv("AUD_HTTP_PORT", port)
 	t.Setenv("AUD_MASTER_KEY", base64.StdEncoding.EncodeToString(make([]byte, masterKeyLen)))
+	t.Setenv("AUD_DB_PATH", filepath.Join(t.TempDir(), "aud.db"))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	runErr := make(chan error, 1)
@@ -302,6 +322,7 @@ func TestRun_GracefulShutdown(t *testing.T) {
 
 func TestRun_AlreadyCancelledContext(t *testing.T) {
 	t.Setenv("AUD_HTTP_PORT", freePort(t))
+	t.Setenv("AUD_DB_PATH", filepath.Join(t.TempDir(), "aud.db"))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -344,6 +365,7 @@ func TestBootstrap_ConfigErrorReturnsBeforeServer(t *testing.T) {
 // SIGINT/SIGTERM.
 func TestBootstrap_CleanShutdownReturnsNil(t *testing.T) {
 	t.Setenv("AUD_HTTP_PORT", freePort(t))
+	t.Setenv("AUD_DB_PATH", filepath.Join(t.TempDir(), "aud.db"))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
