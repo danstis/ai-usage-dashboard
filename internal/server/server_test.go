@@ -63,12 +63,12 @@ func TestHealthz(t *testing.T) {
 	}
 }
 
-func TestDocs(t *testing.T) {
+func TestSwaggerUI(t *testing.T) {
 	t.Parallel()
 
 	handler := server.New(stubProviderRepository{})
 
-	req := httptest.NewRequest(http.MethodGet, "/docs", nil)
+	req := httptest.NewRequest(http.MethodGet, "/swaggerui", nil)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -77,16 +77,16 @@ func TestDocs(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
 	}
 	if !strings.Contains(rec.Body.String(), "SwaggerUIBundle") {
-		t.Fatalf("expected /docs to render the Swagger UI page, got: %s", rec.Body.String())
+		t.Fatalf("expected /swaggerui to render the Swagger UI page, got: %s", rec.Body.String())
 	}
 }
 
-func TestDocsSpec(t *testing.T) {
+func TestSwaggerUISpec(t *testing.T) {
 	t.Parallel()
 
 	handler := server.New(stubProviderRepository{})
 
-	req := httptest.NewRequest(http.MethodGet, "/docs/openapi.yaml", nil)
+	req := httptest.NewRequest(http.MethodGet, "/swaggerui/openapi.yaml", nil)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -98,7 +98,7 @@ func TestDocsSpec(t *testing.T) {
 		t.Fatalf("expected Content-Type application/yaml, got %q", ct)
 	}
 	if !strings.Contains(rec.Body.String(), "AI Usage Dashboard API") {
-		t.Fatalf("expected /docs/openapi.yaml to serve the committed spec, got: %s", rec.Body.String())
+		t.Fatalf("expected /swaggerui/openapi.yaml to serve the committed spec, got: %s", rec.Body.String())
 	}
 }
 

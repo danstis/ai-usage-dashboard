@@ -15,8 +15,8 @@ import (
 func New(providers api.ProviderRepository) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealthz)
-	mux.HandleFunc("GET /docs", docs.HandleUI)
-	mux.HandleFunc("GET /docs/openapi.yaml", docs.HandleSpec)
+	mux.HandleFunc("GET /swaggerui", docs.HandleUI)
+	mux.HandleFunc("GET /swaggerui/openapi.yaml", docs.HandleSpec)
 	mux.Handle("/api/v1/", api.NewHandler(providers))
 	return mux
 }

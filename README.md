@@ -82,11 +82,11 @@ etc.) — no parser required.
 
 ## HTTP API
 
-| Method | Path                  | Response                       | Purpose                  |
-| ------ | --------------------- | ------------------------------ | ------------------------ |
-| `GET`  | `/healthz`            | `200 {"status":"ok"}`          | Liveness probe.          |
-| `GET`  | `/docs`               | `200 text/html`                | Swagger UI for `/api/v1`.|
-| `GET`  | `/docs/openapi.yaml`  | `200 application/yaml`         | The spec Swagger UI renders (embedded from `api/openapi.yaml`). |
+| Method | Path                       | Response                       | Purpose                  |
+| ------ | -------------------------- | ------------------------------ | ------------------------ |
+| `GET`  | `/healthz`                 | `200 {"status":"ok"}`          | Liveness probe.          |
+| `GET`  | `/swaggerui`               | `200 text/html`                | Swagger UI for `/api/v1`.|
+| `GET`  | `/swaggerui/openapi.yaml`  | `200 application/yaml`         | The spec Swagger UI renders (embedded from `api/openapi.yaml`). |
 
 `/healthz` is intentionally minimal: it confirms the process is up and the
 HTTP handler is reachable. It does **not** check downstream dependencies, so
@@ -103,14 +103,14 @@ validates the committed spec and fails the build if it is malformed;
 `make generate` regenerates the request/response types in
 `internal/api/types.gen.go` via `oapi-codegen`.
 
-`GET /docs` serves a Swagger UI (`internal/docs`) so developers can browse
-and exercise `/api/v1` routes directly from a browser. The page and the
-spec it renders (`GET /docs/openapi.yaml`) are both embedded at build time
-from `api/openapi.yaml` via `go:embed` (see `api/openapi.go`), so they never
-drift from the committed contract. The Swagger UI assets themselves
-(`swagger-ui-dist`) load from a version-pinned CDN (`jsdelivr`), so `/docs`
-requires outbound internet access from the browser — the `/api/v1` routes
-it documents do not.
+`GET /swaggerui` serves a Swagger UI (`internal/docs`) so developers can
+browse and exercise `/api/v1` routes directly from a browser. The page and
+the spec it renders (`GET /swaggerui/openapi.yaml`) are both embedded at
+build time from `api/openapi.yaml` via `go:embed` (see `api/openapi.go`), so
+they never drift from the committed contract. The Swagger UI assets
+themselves (`swagger-ui-dist`) load from a version-pinned CDN (`jsdelivr`),
+so `/swaggerui` requires outbound internet access from the browser — the
+`/api/v1` routes it documents do not.
 
 The HTTP skeleton (`internal/api`) is mounted under `/api/v1` in
 `server.New()`:

@@ -12,7 +12,7 @@ import (
 func TestHandleUI(t *testing.T) {
 	t.Parallel()
 
-	req := httptest.NewRequest(http.MethodGet, "/docs", nil)
+	req := httptest.NewRequest(http.MethodGet, "/swaggerui", nil)
 	rec := httptest.NewRecorder()
 
 	docs.HandleUI(rec, req)
@@ -28,15 +28,15 @@ func TestHandleUI(t *testing.T) {
 	if !strings.Contains(body, "SwaggerUIBundle") {
 		t.Fatalf("expected body to reference SwaggerUIBundle, got: %s", body)
 	}
-	if !strings.Contains(body, "/docs/openapi.yaml") {
-		t.Fatalf("expected body to point at /docs/openapi.yaml, got: %s", body)
+	if !strings.Contains(body, "/swaggerui/openapi.yaml") {
+		t.Fatalf("expected body to point at /swaggerui/openapi.yaml, got: %s", body)
 	}
 }
 
 func TestHandleSpec(t *testing.T) {
 	t.Parallel()
 
-	req := httptest.NewRequest(http.MethodGet, "/docs/openapi.yaml", nil)
+	req := httptest.NewRequest(http.MethodGet, "/swaggerui/openapi.yaml", nil)
 	rec := httptest.NewRecorder()
 
 	docs.HandleSpec(rec, req)
