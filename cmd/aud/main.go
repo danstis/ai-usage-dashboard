@@ -68,10 +68,10 @@ func run(ctx context.Context) error {
 	}
 	slog.Info("configuration loaded", "config", cfg)
 
-	// Store setup uses its own background context rather than ctx: ctx only
-	// signals "stop serving" (SIGINT/SIGTERM) and may already be cancelled
-	// before the listener ever starts (see TestRun_AlreadyCancelledContext),
-	// which must not abort opening/migrating the database.
+	// Boot uses its own background context rather than ctx: ctx only signals
+	// "stop serving" (SIGINT/SIGTERM) and may already be cancelled before the
+	// listener ever starts (see TestRun_AlreadyCancelledContext), which must
+	// not abort opening/migrating the database or reconciling providers.
 	db, err := sqlite.New(context.Background(), cfg.dbPath)
 	if err != nil {
 		return fmt.Errorf("open store: %w", err)
@@ -83,7 +83,7 @@ func run(ctx context.Context) error {
 	}()
 
 	providerSvc := provider.NewService(db, provider.Registry)
-	if err := providerSvc.Reconcile(context.Background()); err != nil {
+	if err := providerSvc.Reconcile(context.Background()); err != nil { //nolint:godre // boot-time; see comment above
 		return fmt.Errorf("reconcile providers: %w", err)
 	}
 

@@ -38,14 +38,21 @@ func NewHandler(repo ProviderRepository) http.Handler {
 	return chain(withRequestID, withLogging, withRecovery)(mux)
 }
 
+// methodNotAllowed writes the canonical /api/v1 405 envelope with the given
+// Allow header — used by every {collection,item,enable,disable} handler
+// that dispatches on a single HTTP method.
+func methodNotAllowed(w http.ResponseWriter, allow string) {
+	w.Header().Set("Allow", allow)
+	writeError(w, http.StatusMethodNotAllowed, ErrorErrorCodeValidationError, "method not allowed")
+}
+
 // handleProvidersCollection dispatches on method for the single
 // /api/v1/providers route so a non-GET request gets the canonical structured
 // 405 envelope instead of Go's default plain-text response.
 func handleProvidersCollection(repo ProviderRepository) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			w.Header().Set("Allow", http.MethodGet)
-			writeError(w, http.StatusMethodNotAllowed, ErrorErrorCodeValidationError, "method not allowed")
+			methodNotAllowed(w, http.MethodGet)
 			return
 		}
 
@@ -65,8 +72,7 @@ func handleProvidersCollection(repo ProviderRepository) http.HandlerFunc {
 func handleProviderItem(repo ProviderRepository) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			w.Header().Set("Allow", http.MethodGet)
-			writeError(w, http.StatusMethodNotAllowed, ErrorErrorCodeValidationError, "method not allowed")
+			methodNotAllowed(w, http.MethodGet)
 			return
 		}
 		respondProvider(w, r, repo.GetProvider)
@@ -77,8 +83,7 @@ func handleProviderItem(repo ProviderRepository) http.HandlerFunc {
 func handleProviderEnable(repo ProviderRepository) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			w.Header().Set("Allow", http.MethodPost)
-			writeError(w, http.StatusMethodNotAllowed, ErrorErrorCodeValidationError, "method not allowed")
+			methodNotAllowed(w, http.MethodPost)
 			return
 		}
 		respondProvider(w, r, repo.EnableProvider)
@@ -89,8 +94,7 @@ func handleProviderEnable(repo ProviderRepository) http.HandlerFunc {
 func handleProviderDisable(repo ProviderRepository) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			w.Header().Set("Allow", http.MethodPost)
-			writeError(w, http.StatusMethodNotAllowed, ErrorErrorCodeValidationError, "method not allowed")
+			methodNotAllowed(w, http.MethodPost)
 			return
 		}
 		respondProvider(w, r, repo.DisableProvider)
