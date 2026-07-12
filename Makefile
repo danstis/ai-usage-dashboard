@@ -8,7 +8,7 @@ build:
 
 .PHONY: test
 test:
-	go test ./... -race -covermode=atomic
+	go test ./... -race -covermode=atomic -coverprofile=coverage.out
 
 .PHONY: lint
 lint:
