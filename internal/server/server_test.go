@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/danstis/ai-usage-dashboard/internal/api"
@@ -59,6 +60,45 @@ func TestHealthz(t *testing.T) {
 
 	if body.Status != "ok" {
 		t.Fatalf("expected status %q, got %q", "ok", body.Status)
+	}
+}
+
+func TestSwaggerUI(t *testing.T) {
+	t.Parallel()
+
+	handler := server.New(stubProviderRepository{})
+
+	req := httptest.NewRequest(http.MethodGet, "/swaggerui", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "SwaggerUIBundle") {
+		t.Fatalf("expected /swaggerui to render the Swagger UI page, got: %s", rec.Body.String())
+	}
+}
+
+func TestSwaggerUISpec(t *testing.T) {
+	t.Parallel()
+
+	handler := server.New(stubProviderRepository{})
+
+	req := httptest.NewRequest(http.MethodGet, "/swaggerui/openapi.yaml", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/yaml" {
+		t.Fatalf("expected Content-Type application/yaml, got %q", ct)
+	}
+	if !strings.Contains(rec.Body.String(), "AI Usage Dashboard API") {
+		t.Fatalf("expected /swaggerui/openapi.yaml to serve the committed spec, got: %s", rec.Body.String())
 	}
 }
 
