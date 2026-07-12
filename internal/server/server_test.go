@@ -10,6 +10,8 @@ import (
 )
 
 func TestHealthz(t *testing.T) {
+	t.Parallel()
+
 	handler := server.New()
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)

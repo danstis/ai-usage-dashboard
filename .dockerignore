@@ -8,3 +8,5 @@ web/node_modules
 web/dist
 bin/
 dist/
+coverage.out
+Dockerfile

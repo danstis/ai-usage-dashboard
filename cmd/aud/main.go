@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -34,13 +35,10 @@ func main() {
 }
 
 func run() error {
-	port := os.Getenv("AUD_HTTP_PORT")
-	if port == "" {
-		port = defaultPort
-	}
+	cfg := loadConfig()
 
 	httpServer := &http.Server{
-		Addr:              ":" + port,
+		Addr:              ":" + cfg.port,
 		Handler:           server.New(),
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       readTimeout,
@@ -77,4 +75,17 @@ func run() error {
 
 	slog.Info("server stopped cleanly")
 	return nil
+}
+
+type config struct {
+	port string
+}
+
+func loadConfig() config {
+	port := strings.TrimSpace(os.Getenv("AUD_HTTP_PORT"))
+	if port == "" {
+		port = defaultPort
+	}
+
+	return config{port: port}
 }
