@@ -11,8 +11,9 @@ placeholder pending a later phase of the project).
 
 ## Development
 
-Requires Go 1.24.3+ (matches `go.mod`). CI builds and tests against Go 1.26
-(`Dockerfile`, `.github/workflows/ci.yml`).
+Requires Go 1.25.7+ (matches `go.mod`; bumped from 1.24.3 by the `modernc.org/sqlite`
+and `goose` dependencies). CI builds and tests against Go 1.26 (`Dockerfile`,
+`.github/workflows/ci.yml`).
 
 ```sh
 make build      # go build -trimpath -o bin/aud ./cmd/aud
@@ -111,6 +112,21 @@ The image is a multi-stage, statically linked, non-root build on
 `gcr.io/distroless/static:nonroot`. The published image lives at
 `ghcr.io/danstis/ai-usage-dashboard` and is tagged with the commit SHA, the
 default branch (`latest`), and the semver on `v*` tag pushes.
+
+The image sets `AUD_DB_PATH=/data/aud.db` and declares `/data` as a `VOLUME`,
+pre-owned by the `nonroot` user/group (uid/gid `65532`) baked into the image.
+Mount a **named volume** at `/data` to persist the database across container
+restarts — Docker seeds a named volume from the image's `/data` directory
+(and its ownership) on first use:
+
+```sh
+docker volume create aud-data
+docker run -d -p 8080:8080 -v aud-data:/data ghcr.io/danstis/ai-usage-dashboard
+```
+
+A bind mount (`-v /host/path:/data`) instead uses the host directory's
+existing ownership, which will not be writable by uid `65532` unless the
+host path is created with matching permissions first.
 
 ## CI/CD
 

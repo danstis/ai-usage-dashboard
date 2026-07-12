@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/danstis/ai-usage-dashboard/internal/server"
+	"github.com/danstis/ai-usage-dashboard/internal/store/sqlite"
 )
 
 const (
@@ -64,6 +65,20 @@ func run(ctx context.Context) error {
 		return err
 	}
 	slog.Info("configuration loaded", "config", cfg)
+
+	// Store setup uses its own background context rather than ctx: ctx only
+	// signals "stop serving" (SIGINT/SIGTERM) and may already be cancelled
+	// before the listener ever starts (see TestRun_AlreadyCancelledContext),
+	// which must not abort opening/migrating the database.
+	db, err := sqlite.New(context.Background(), cfg.dbPath)
+	if err != nil {
+		return fmt.Errorf("open store: %w", err)
+	}
+	defer func() {
+		if err := db.Close(); err != nil {
+			slog.Error("close store", "error", err)
+		}
+	}()
 
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.port,
