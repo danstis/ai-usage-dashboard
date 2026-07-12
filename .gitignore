@@ -1,0 +1,184 @@
+# =============================================================================
+# OS & Editor
+# =============================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+Desktop.ini
+
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+
+# =============================================================================
+# Go
+# =============================================================================
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test & coverage
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Dependency cache (kept for modules-aware workflows; remove if vendoring)
+# vendor/
+
+# Build output
+/bin/
+/dist/
+
+# Go workspace
+go.work.sum
+
+# =============================================================================
+# Python
+# =============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.python-version
+
+# Testing & coverage
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+htmlcov/
+.pytest_cache/
+nosetests.xml
+coverage.xml
+*.cover
+
+# Type checkers & linters
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+.pytype/
+
+# Jupyter
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+
+# =============================================================================
+# Rust
+# =============================================================================
+target/
+Cargo.lock
+
+# Benchmarks
+criterion/
+
+# =============================================================================
+# JavaScript
+# =============================================================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+.npm
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.pnp.*
+
+# Build output
+dist/
+dist-ssr/
+
+# Environment
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# =============================================================================
+# TypeScript
+# =============================================================================
+*.tsbuildinfo
+.tsbuildinfo
+
+# =============================================================================
+# Terraform
+# =============================================================================
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfvars
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# =============================================================================
+# Docker
+# =============================================================================
+.dockerignore
+
+# =============================================================================
+# Secrets & local config
+# =============================================================================
+*.pem
+*.key
+*.cert
+*.p12
+*.pfx
+.env
+.env.*
+!.env.example
+secrets/
+
+# =============================================================================
+# AI Agent Artifacts
+# =============================================================================
+.omc/
+.claude/
+.emdash.json

@@ -1,0 +1,88 @@
+# EditorConfig is awesome: https://EditorConfig.org
+
+# top-most EditorConfig file
+root = true
+
+[*]
+indent_style = tab
+indent_size = 4
+end_of_line = lf
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+# -------------------------------------
+# Markup & data formats
+# -------------------------------------
+
+[*.md]
+indent_style = space
+indent_size = 2
+trim_trailing_whitespace = false
+max_line_length = off
+
+[*.{json,jsonc}]
+indent_style = space
+indent_size = 2
+
+[*.{yml,yaml}]
+indent_style = space
+indent_size = 2
+
+[*.toml]
+indent_style = space
+indent_size = 2
+
+[*.{xml,svg}]
+indent_style = space
+indent_size = 2
+
+[*.{html,htm}]
+indent_style = space
+indent_size = 2
+
+[*.{css,scss,sass,less}]
+indent_style = space
+indent_size = 2
+
+# -------------------------------------
+# Languages
+# -------------------------------------
+
+# Go — tabs enforced by gofmt; inherits defaults
+[*.go]
+indent_style = tab
+
+# Python — PEP 8
+[*.py]
+indent_style = space
+indent_size = 4
+
+# Rust — rustfmt defaults
+[*.rs]
+indent_style = space
+indent_size = 4
+
+# JavaScript & TypeScript
+[*.{js,jsx,mjs,cjs,ts,tsx}]
+indent_style = space
+indent_size = 2
+
+# Shell
+[*.{sh,bash,zsh}]
+indent_style = space
+indent_size = 2
+
+# -------------------------------------
+# Infrastructure & config
+# -------------------------------------
+
+# Terraform
+[*.{tf,tfvars}]
+indent_style = space
+indent_size = 2
+
+# Makefile — tabs are required syntax
+[Makefile]
+indent_style = tab
+trim_trailing_whitespace = false
