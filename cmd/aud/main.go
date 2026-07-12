@@ -83,7 +83,7 @@ func run(ctx context.Context) error {
 	}()
 
 	providerSvc := provider.NewService(db, provider.Registry)
-	if err := providerSvc.Reconcile(context.Background()); err != nil { //nolint:godre // boot-time; see comment above
+	if err := providerSvc.Reconcile(context.Background()); err != nil { // NOSONAR godre:S8239 — intentional boot-time context; see comment above
 		return fmt.Errorf("reconcile providers: %w", err)
 	}
 
