@@ -31,6 +31,16 @@ func TestHandleUI(t *testing.T) {
 	if !strings.Contains(body, "/swaggerui/openapi.yaml") {
 		t.Fatalf("expected body to point at /swaggerui/openapi.yaml, got: %s", body)
 	}
+
+	// The CDN-loaded swagger-ui-dist assets must carry Subresource Integrity
+	// attributes (SonarCloud Web:S5725) so a compromised or MITM'd CDN
+	// response is rejected by the browser instead of executed.
+	if strings.Count(body, `integrity="sha384-`) != 2 {
+		t.Fatalf("expected both CDN tags to carry an SRI integrity attribute, got: %s", body)
+	}
+	if strings.Count(body, `crossorigin="anonymous"`) != 2 {
+		t.Fatalf("expected both CDN tags to carry crossorigin=\"anonymous\", got: %s", body)
+	}
 }
 
 func TestHandleSpec(t *testing.T) {
