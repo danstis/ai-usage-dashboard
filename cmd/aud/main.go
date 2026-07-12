@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/danstis/ai-usage-dashboard/internal/api"
+	"github.com/danstis/ai-usage-dashboard/internal/provider"
 	"github.com/danstis/ai-usage-dashboard/internal/server"
 	"github.com/danstis/ai-usage-dashboard/internal/store/sqlite"
 )
@@ -66,10 +68,10 @@ func run(ctx context.Context) error {
 	}
 	slog.Info("configuration loaded", "config", cfg)
 
-	// Store setup uses its own background context rather than ctx: ctx only
-	// signals "stop serving" (SIGINT/SIGTERM) and may already be cancelled
-	// before the listener ever starts (see TestRun_AlreadyCancelledContext),
-	// which must not abort opening/migrating the database.
+	// Boot uses its own background context rather than ctx: ctx only signals
+	// "stop serving" (SIGINT/SIGTERM) and may already be cancelled before the
+	// listener ever starts (see TestRun_AlreadyCancelledContext), which must
+	// not abort opening/migrating the database or reconciling providers.
 	db, err := sqlite.New(context.Background(), cfg.dbPath)
 	if err != nil {
 		return fmt.Errorf("open store: %w", err)
@@ -80,9 +82,14 @@ func run(ctx context.Context) error {
 		}
 	}()
 
+	providerSvc := provider.NewService(db, provider.Registry)
+	if err := providerSvc.Reconcile(context.Background()); err != nil { // NOSONAR godre:S8239 — intentional boot-time context; see comment above
+		return fmt.Errorf("reconcile providers: %w", err)
+	}
+
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.port,
-		Handler:           server.New(),
+		Handler:           server.New(api.NewProviderRepository(providerSvc)),
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       readTimeout,
 		WriteTimeout:      writeTimeout,
