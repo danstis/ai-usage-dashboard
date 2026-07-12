@@ -14,6 +14,14 @@ test:
 lint:
 	golangci-lint run
 
+.PHONY: spec-lint
+spec-lint:
+	go run ./cmd/spec-lint api/openapi.yaml
+
+.PHONY: generate
+generate:
+	go tool oapi-codegen -config oapi-codegen.yaml api/openapi.yaml
+
 .PHONY: run
 run:
 	go run ./cmd/aud

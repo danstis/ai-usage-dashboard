@@ -11,14 +11,16 @@ placeholder pending a later phase of the project).
 
 ## Development
 
-Requires Go 1.24.1+ (matches `go.mod`). CI builds and tests against Go 1.26
+Requires Go 1.24.3+ (matches `go.mod`). CI builds and tests against Go 1.26
 (`Dockerfile`, `.github/workflows/ci.yml`).
 
 ```sh
-make build   # go build -trimpath -o bin/aud ./cmd/aud
-make test    # go test ./... -race -covermode=atomic -coverprofile=coverage.out
-make lint    # golangci-lint run
-make run     # go run ./cmd/aud
+make build      # go build -trimpath -o bin/aud ./cmd/aud
+make test       # go test ./... -race -covermode=atomic -coverprofile=coverage.out
+make lint       # golangci-lint run
+make spec-lint  # validate api/openapi.yaml
+make generate   # regenerate internal/api/types.gen.go from api/openapi.yaml
+make run        # go run ./cmd/aud
 ```
 
 `make test` produces `coverage.out`, matching the command CI runs
@@ -28,11 +30,20 @@ make run     # go run ./cmd/aud
 
 ## Configuration
 
-The service reads its configuration from environment variables.
+The service reads its configuration from environment variables. `loadConfig`
+returns an error on any invalid value, and `run()` fails fast before the HTTP
+server starts.
 
-| Variable        | Default | Description                              |
-| --------------- | ------- | ---------------------------------------- |
-| `AUD_HTTP_PORT` | `8080`  | TCP port the HTTP server binds to.       |
+| Variable            | Default          | Description                                                                  |
+| ------------------- | ---------------- | ----------------------------------------------------------------------------- |
+| `AUD_HTTP_PORT`      | `8080`           | TCP port the HTTP server binds to.                                            |
+| `AUD_MASTER_KEY`     | _(none)_         | Standard base64, must decode to exactly 32 bytes (AES-256). Optional in P1 — absent means boot proceeds with no credential features. If set, an invalid encoding or wrong length fails boot with a clear error; the value is never logged. Will become required once the AES-256-GCM credential store lands. |
+| `AUD_POLL_INTERVAL`  | `5m`              | Parsed as a Go `time.Duration` (e.g. `90s`, `5m`). An invalid value fails boot. |
+| `AUD_DB_PATH`        | `./data/aud.db`  | Filesystem path to the SQLite database file.                                  |
+
+Startup logs one `configuration loaded` line with `port`, `pollInterval`,
+`dbPath`, and `masterKeySet` (a boolean) — the master key bytes themselves are
+never included in logs (see `config.LogValue` in `cmd/aud/main.go`).
 
 HTTP server timeouts (`cmd/aud/main.go`) are compiled-in constants and are
 not configurable at runtime:
@@ -80,6 +91,14 @@ it is suitable as both a startup probe and a liveness probe but is **not**
 a readiness probe once external services are wired in. When downstream
 checks are added they should land on a separate endpoint (e.g. `/readyz`)
 so that liveness is not coupled to dependency health.
+
+### `/api/v1` contract
+
+[`api/openapi.yaml`](api/openapi.yaml) is the source-of-truth OpenAPI 3
+contract for the `/api/v1` provider registry surface (handlers land in a
+later phase). `make spec-lint` validates the committed spec and fails the
+build if it is malformed; `make generate` regenerates the request/response
+types in `internal/api/types.gen.go` via `oapi-codegen`.
 
 ## Docker
 
