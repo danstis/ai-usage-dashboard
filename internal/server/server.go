@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+
+	"github.com/danstis/ai-usage-dashboard/internal/api"
 )
 
 // New constructs the top-level HTTP handler for the service.
 func New() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealthz)
+	mux.Handle("/api/v1/", api.NewHandler(api.NewInMemoryProviderRepository()))
 	return mux
 }
 

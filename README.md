@@ -96,10 +96,27 @@ so that liveness is not coupled to dependency health.
 ### `/api/v1` contract
 
 [`api/openapi.yaml`](api/openapi.yaml) is the source-of-truth OpenAPI 3
-contract for the `/api/v1` provider registry surface (handlers land in a
-later phase). `make spec-lint` validates the committed spec and fails the
-build if it is malformed; `make generate` regenerates the request/response
-types in `internal/api/types.gen.go` via `oapi-codegen`.
+contract for the `/api/v1` provider registry surface. `make spec-lint`
+validates the committed spec and fails the build if it is malformed;
+`make generate` regenerates the request/response types in
+`internal/api/types.gen.go` via `oapi-codegen`.
+
+The HTTP skeleton (`internal/api`) is mounted under `/api/v1` in
+`server.New()`:
+
+- Every request passes through a middleware chain: a request-id injector
+  (`X-Request-Id` response header), structured request logging
+  (`log/slog`: method, path, status, duration, request id), and panic
+  recovery (a recovered panic becomes a structured `500` — the panic value
+  is logged server-side only, never sent to the client).
+- Every error response uses the canonical envelope
+  `{"error":{"code":"...","message":"..."}}` — an unknown `/api/v1` route
+  returns a structured `404 not_found`, and a wrong-method request to a
+  known route returns a structured `405`.
+- `GET /api/v1/providers` currently returns `[]`: it is wired to a
+  `ProviderRepository` interface seam with an in-memory stub
+  (`internal/api`) so the contract is exercised end-to-end before SQLite
+  persistence and the real provider registry land in later phases.
 
 ## Docker
 
