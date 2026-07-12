@@ -2,46 +2,38 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
 
-// stubProviderRepository is a test double for ProviderRepository.
-type stubProviderRepository struct {
+// stubProviderLister is a test double for ProviderLister.
+type stubProviderLister struct {
 	providers []Provider
 	err       error
 }
 
-func (s stubProviderRepository) ListProviders(_ context.Context) ([]Provider, error) {
+func (s stubProviderLister) ListProviders(_ context.Context) ([]Provider, error) {
 	return s.providers, s.err
 }
 
 func TestNewHandler_ListProvidersEmpty(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler(stubProviderRepository{})
+	handler := NewHandler(stubProviderLister{})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
-	}
-	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
-		t.Fatalf("expected Content-Type application/json, got %q", ct)
-	}
+	assertStatus(t, rec, http.StatusOK)
+	assertJSONHeader(t, rec)
 	if rec.Header().Get("X-Request-Id") == "" {
 		t.Fatal("expected X-Request-Id header to be set")
 	}
 
-	var providers []Provider
-	if err := json.NewDecoder(rec.Body).Decode(&providers); err != nil {
-		t.Fatalf("decode body: %v", err)
-	}
+	providers := decodeProviders(t, rec)
 	if len(providers) != 0 {
 		t.Fatalf("expected empty providers list, got %v", providers)
 	}
@@ -50,73 +42,43 @@ func TestNewHandler_ListProvidersEmpty(t *testing.T) {
 func TestNewHandler_ListProvidersRepositoryError(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler(stubProviderRepository{err: errors.New("boom")})
+	handler := NewHandler(stubProviderLister{err: errors.New("boom")})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, rec.Code)
-	}
-
-	var body Error
-	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
-		t.Fatalf("decode body: %v", err)
-	}
-	if body.Error.Code != ErrorErrorCodeInternalError {
-		t.Fatalf("expected code %q, got %q", ErrorErrorCodeInternalError, body.Error.Code)
-	}
+	assertJSONError(t, rec, http.StatusInternalServerError, ErrorErrorCodeInternalError, "internal server error")
 }
 
 func TestNewHandler_UnknownRouteIsStructured404(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler(stubProviderRepository{})
+	handler := NewHandler(stubProviderLister{})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/nope", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
-	}
-	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
-		t.Fatalf("expected Content-Type application/json, got %q", ct)
-	}
-
-	var body Error
-	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
-		t.Fatalf("decode body: %v", err)
-	}
-	if body.Error.Code != ErrorErrorCodeNotFound {
-		t.Fatalf("expected code %q, got %q", ErrorErrorCodeNotFound, body.Error.Code)
-	}
+	assertJSONError(t, rec, http.StatusNotFound, ErrorErrorCodeNotFound, "resource not found")
 }
 
 func TestNewHandler_MethodNotAllowedIsStructured405(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler(stubProviderRepository{})
+	handler := NewHandler(stubProviderLister{})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/providers", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
-	}
-	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
-		t.Fatalf("expected Content-Type application/json, got %q", ct)
-	}
+	assertStatus(t, rec, http.StatusMethodNotAllowed)
+	assertJSONHeader(t, rec)
 	if allow := rec.Header().Get("Allow"); allow != http.MethodGet {
 		t.Fatalf("expected Allow header %q, got %q", http.MethodGet, allow)
 	}
 
-	var body Error
-	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
-		t.Fatalf("decode body: %v", err)
-	}
+	body := decodeError(t, rec)
 	if body.Error.Code == "" {
 		t.Fatal("expected a non-empty error code")
 	}
@@ -125,7 +87,7 @@ func TestNewHandler_MethodNotAllowedIsStructured405(t *testing.T) {
 func TestNewHandler_PanicRecoveredAsStructured500(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler(panickingRepository{})
+	handler := NewHandler(panickingLister{})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers", nil)
 	rec := httptest.NewRecorder()
@@ -133,29 +95,19 @@ func TestNewHandler_PanicRecoveredAsStructured500(t *testing.T) {
 	// Should not panic even though the repository panics.
 	handler.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, rec.Code)
-	}
-
-	var body Error
-	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
-		t.Fatalf("decode body: %v", err)
-	}
-	if body.Error.Code != ErrorErrorCodeInternalError {
-		t.Fatalf("expected code %q, got %q", ErrorErrorCodeInternalError, body.Error.Code)
-	}
+	assertJSONError(t, rec, http.StatusInternalServerError, ErrorErrorCodeInternalError, "internal server error")
 }
 
-type panickingRepository struct{}
+type panickingLister struct{}
 
-func (panickingRepository) ListProviders(_ context.Context) ([]Provider, error) {
+func (panickingLister) ListProviders(_ context.Context) ([]Provider, error) {
 	panic("boom")
 }
 
-func TestNewInMemoryProviderRepository_ListsEmpty(t *testing.T) {
+func TestNewInMemoryProviderLister_ListsEmpty(t *testing.T) {
 	t.Parallel()
 
-	repo := NewInMemoryProviderRepository()
+	repo := NewInMemoryProviderLister()
 
 	providers, err := repo.ListProviders(context.Background())
 	if err != nil {

@@ -8,11 +8,11 @@ import (
 	"net/http"
 )
 
-// ProviderRepository is the read seam the providers handler depends on. S3
+// ProviderLister is the read seam the providers handler depends on. S3
 // supplies a SQLite-backed implementation (internal/store); S4 wires the
 // seeded registry through it. This package only depends on the interface so
 // the HTTP contract can be exercised before persistence lands.
-type ProviderRepository interface {
+type ProviderLister interface {
 	ListProviders(ctx context.Context) ([]Provider, error)
 }
 
@@ -20,7 +20,7 @@ type ProviderRepository interface {
 // id, structured logging, panic recovery) wrapped around the versioned
 // routes, plus a structured 404 for anything under /api/v1 that isn't
 // registered.
-func NewHandler(repo ProviderRepository) http.Handler {
+func NewHandler(repo ProviderLister) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/providers", handleProviders(repo))
 	mux.HandleFunc("/api/v1/", handleNotFound)
@@ -31,7 +31,7 @@ func NewHandler(repo ProviderRepository) http.Handler {
 // handleProviders dispatches on method for the single /api/v1/providers
 // route registered above so a non-GET request gets the canonical structured
 // 405 envelope instead of Go's default plain-text response.
-func handleProviders(repo ProviderRepository) http.HandlerFunc {
+func handleProviders(repo ProviderLister) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.Header().Set("Allow", http.MethodGet)
@@ -55,18 +55,18 @@ func handleNotFound(w http.ResponseWriter, _ *http.Request) {
 	writeError(w, http.StatusNotFound, ErrorErrorCodeNotFound, "resource not found")
 }
 
-// inMemoryProviderRepository is a placeholder ProviderRepository that always
-// reports zero providers. It exists so the /providers contract can be
-// exercised before S3's persistent store lands; S4 replaces it with the
-// seeded registry backed by that store.
-type inMemoryProviderRepository struct{}
+// inMemoryProviderLister is a placeholder ProviderLister that always reports
+// zero providers. It exists so the /providers contract can be exercised
+// before S3's persistent store lands; S4 replaces it with the seeded
+// registry backed by that store.
+type inMemoryProviderLister struct{}
 
-// NewInMemoryProviderRepository returns the placeholder ProviderRepository
-// used by server.New until S3/S4 land.
-func NewInMemoryProviderRepository() ProviderRepository {
-	return inMemoryProviderRepository{}
+// NewInMemoryProviderLister returns the placeholder ProviderLister used by
+// server.New until S3/S4 land.
+func NewInMemoryProviderLister() ProviderLister {
+	return inMemoryProviderLister{}
 }
 
-func (inMemoryProviderRepository) ListProviders(_ context.Context) ([]Provider, error) {
+func (inMemoryProviderLister) ListProviders(_ context.Context) ([]Provider, error) {
 	return []Provider{}, nil
 }

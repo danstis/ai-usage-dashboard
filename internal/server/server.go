@@ -13,7 +13,7 @@ import (
 func New() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealthz)
-	mux.Handle("/api/v1/", api.NewHandler(api.NewInMemoryProviderRepository()))
+	mux.Handle("/api/v1/", api.NewHandler(api.NewInMemoryProviderLister()))
 	return mux
 }
 

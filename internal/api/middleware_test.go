@@ -104,17 +104,7 @@ func TestWithRecovery_RecoversPanicAsStructured500(t *testing.T) {
 
 	withRecovery(next).ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, rec.Code)
-	}
-
-	var body Error
-	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
-		t.Fatalf("decode body: %v", err)
-	}
-	if body.Error.Code != ErrorErrorCodeInternalError {
-		t.Fatalf("expected code %q, got %q", ErrorErrorCodeInternalError, body.Error.Code)
-	}
+	body := assertJSONError(t, rec, http.StatusInternalServerError, ErrorErrorCodeInternalError, "internal server error")
 	if strings.Contains(body.Error.Message, "boom") {
 		t.Fatalf("expected panic detail not to leak into message, got %q", body.Error.Message)
 	}
@@ -132,9 +122,7 @@ func TestWithRecovery_NoPanicPassesThrough(t *testing.T) {
 
 	withRecovery(next).ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
-	}
+	assertStatus(t, rec, http.StatusOK)
 }
 
 func TestChain_AppliesOutermostFirst(t *testing.T) {

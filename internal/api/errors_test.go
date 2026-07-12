@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -29,23 +28,7 @@ func TestWriteError(t *testing.T) {
 			rec := httptest.NewRecorder()
 			writeError(rec, tt.status, tt.code, tt.message)
 
-			if rec.Code != tt.status {
-				t.Fatalf("expected status %d, got %d", tt.status, rec.Code)
-			}
-			if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
-				t.Fatalf("expected Content-Type application/json, got %q", ct)
-			}
-
-			var body Error
-			if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
-				t.Fatalf("decode body: %v", err)
-			}
-			if body.Error.Code != tt.code {
-				t.Fatalf("expected code %q, got %q", tt.code, body.Error.Code)
-			}
-			if body.Error.Message != tt.message {
-				t.Fatalf("expected message %q, got %q", tt.message, body.Error.Message)
-			}
+			body := assertJSONError(t, rec, tt.status, tt.code, tt.message)
 			if body.Error.Details != nil {
 				t.Fatalf("expected no details, got %v", *body.Error.Details)
 			}
@@ -82,12 +65,8 @@ func TestWriteJSON(t *testing.T) {
 	rec := httptest.NewRecorder()
 	writeJSON(rec, http.StatusOK, []Provider{})
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
-	}
-	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
-		t.Fatalf("expected Content-Type application/json, got %q", ct)
-	}
+	assertStatus(t, rec, http.StatusOK)
+	assertJSONHeader(t, rec)
 	if got := rec.Body.String(); got != "[]\n" {
 		t.Fatalf("expected empty array payload, got %q", got)
 	}

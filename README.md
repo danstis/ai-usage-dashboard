@@ -114,7 +114,7 @@ The HTTP skeleton (`internal/api`) is mounted under `/api/v1` in
   returns a structured `404 not_found`, and a wrong-method request to a
   known route returns a structured `405`.
 - `GET /api/v1/providers` currently returns `[]`: it is wired to a
-  `ProviderRepository` interface seam with an in-memory stub
+  `ProviderLister` interface seam with an in-memory stub
   (`internal/api`) so the contract is exercised end-to-end before SQLite
   persistence and the real provider registry land in later phases.
 
