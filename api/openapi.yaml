@@ -1,0 +1,164 @@
+openapi: 3.0.3
+info:
+  title: AI Usage Dashboard API
+  description: >-
+    Contract for the AI Usage Dashboard `/api/v1` HTTP surface. This document is the
+    single source of truth for the provider registry endpoints; types are generated
+    from it via oapi-codegen and hand-written handlers are validated against it.
+  version: "1.0.0"
+servers:
+  - url: /api/v1
+tags:
+  - name: providers
+    description: Provider registry — metadata and enable/disable state.
+paths:
+  /providers:
+    get:
+      operationId: listProviders
+      tags: [providers]
+      summary: List all known providers with their enabled state.
+      responses:
+        "200":
+          description: The full set of registered providers.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Provider"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /providers/{id}:
+    get:
+      operationId: getProvider
+      tags: [providers]
+      summary: Get a single provider by id.
+      parameters:
+        - $ref: "#/components/parameters/ProviderId"
+      responses:
+        "200":
+          description: The requested provider.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Provider"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /providers/{id}/enable:
+    post:
+      operationId: enableProvider
+      tags: [providers]
+      summary: Enable a provider. Idempotent — enabling an already-enabled provider succeeds.
+      parameters:
+        - $ref: "#/components/parameters/ProviderId"
+      responses:
+        "200":
+          description: The provider, now enabled.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Provider"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /providers/{id}/disable:
+    post:
+      operationId: disableProvider
+      tags: [providers]
+      summary: Disable a provider. Idempotent — disabling an already-disabled provider succeeds.
+      parameters:
+        - $ref: "#/components/parameters/ProviderId"
+      responses:
+        "200":
+          description: The provider, now disabled.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Provider"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+components:
+  parameters:
+    ProviderId:
+      name: id
+      in: path
+      required: true
+      description: Stable provider identifier (e.g. `openai`, `anthropic`).
+      schema:
+        type: string
+  schemas:
+    CredentialField:
+      type: object
+      description: Metadata describing one credential field a provider requires.
+      required: [name, label, secret]
+      properties:
+        name:
+          type: string
+          description: Machine-readable field key (e.g. `api_key`).
+        label:
+          type: string
+          description: Human-readable label for display in a credential form.
+        secret:
+          type: boolean
+          description: Whether the field value must be masked/encrypted at rest.
+    Provider:
+      type: object
+      required: [id, name, enabled, credentialFields]
+      properties:
+        id:
+          type: string
+          description: Stable provider identifier.
+        name:
+          type: string
+          description: Human-readable provider name.
+        enabled:
+          type: boolean
+          description: Whether the provider is currently enabled.
+        credentialFields:
+          type: array
+          description: Credential fields required to configure this provider.
+          items:
+            $ref: "#/components/schemas/CredentialField"
+    Error:
+      type: object
+      description: Canonical error envelope returned by every `/api/v1` error response.
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Stable machine-readable error code.
+              enum:
+                - validation_error
+                - not_found
+                - conflict
+                - unsupported_media_type
+                - internal_error
+            message:
+              type: string
+              description: Human-readable error message. Never contains internal detail on 5xx.
+            details:
+              type: object
+              description: Optional structured detail (e.g. field-level validation errors).
+              additionalProperties: true
+  responses:
+    NotFound:
+      description: The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InternalError:
+      description: An unexpected server error occurred. Detail is never leaked to clients.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
