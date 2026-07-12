@@ -38,7 +38,7 @@ jobs:
       - name: Lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.64.8
+          version: v2.11.4
 
       - name: SonarQube Cloud scan
         if: ${{ env.SONAR_TOKEN != '' && vars.SONAR_PROJECT != '' }}
