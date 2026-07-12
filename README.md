@@ -1,3 +1,3 @@
-# {{ REPO_NAME }}
+# ai-usage-dashboard
 
-{{ REPO_DESCRIPTION }}
+A simple AI Subscription usage dashboard
