@@ -104,6 +104,31 @@ func TestContract_ProviderEndpointsConformToSpec(t *testing.T) {
 	}
 }
 
+func TestContract_UsageEndpointConformsToSpec(t *testing.T) {
+	t.Parallel()
+
+	router := loadSpecRouter(t)
+	handler, _ := newUsageTestHandler(t)
+
+	cases := []struct {
+		name   string
+		method string
+		path   string
+	}{
+		{"pending snapshot for a never-collected provider", http.MethodGet, "/api/v1/providers/openai/usage"},
+		{"unknown provider is 404", http.MethodGet, "/api/v1/providers/does-not-exist/usage"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.path, nil))
+
+			assertConformsToSpec(t, router, httptest.NewRequest(tc.method, tc.path, nil), rec)
+		})
+	}
+}
+
 func TestContract_CredentialEndpointsConformToSpec(t *testing.T) {
 	t.Parallel()
 

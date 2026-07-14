@@ -143,6 +143,29 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
+  /providers/{id}/usage:
+    get:
+      operationId: getProviderUsage
+      tags: [providers]
+      summary: >-
+        Get the latest usage snapshot for a provider. Latest-only — no
+        historical data is retained; each snapshot replaces the previous one.
+        A provider that has never been collected returns 200 with a null
+        collectedAt and no metrics (pending state), not 404 — 404 is reserved
+        for an unknown provider id.
+      parameters:
+        - $ref: "#/components/parameters/ProviderId"
+      responses:
+        "200":
+          description: The latest usage snapshot for the provider, or a pending placeholder.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageSnapshot"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   parameters:
     ProviderId:
@@ -220,6 +243,64 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CredentialPresence"
+    UsageMetric:
+      type: object
+      description: One usage data point captured in a provider's usage snapshot.
+      required: [name, window, unit, used]
+      properties:
+        name:
+          type: string
+          description: Metric name (e.g. `requests`, `spend`).
+        window:
+          type: string
+          description: The window the metric covers (e.g. `day`, `month`).
+        unit:
+          type: string
+          description: >-
+            Smallest integer unit the metric is expressed in (e.g.
+            `usd_cents`, `tokens`) — no fractional/float quantities.
+        used:
+          type: integer
+          format: int64
+        limit:
+          type: integer
+          format: int64
+          nullable: true
+          description: The provider's disclosed cap, or null if unlimited/unknown.
+        remaining:
+          type: integer
+          format: int64
+          nullable: true
+          description: Provider-supplied remaining amount, or null if unknown.
+        resetAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When this metric's window resets, or null if not disclosed.
+    UsageSnapshot:
+      type: object
+      description: >-
+        The latest-only usage snapshot for a provider. No history/time-series
+        is retained — each collection replaces the previous snapshot.
+      required: [collectedAt, metrics]
+      properties:
+        collectedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            When this snapshot was collected, or null if the provider has
+            never been collected (pending state).
+        metrics:
+          type: array
+          items:
+            $ref: "#/components/schemas/UsageMetric"
+        lastError:
+          type: string
+          nullable: true
+          description: >-
+            Error message from the most recent failed collection attempt, if
+            any; absent/null otherwise.
     Error:
       type: object
       description: Canonical error envelope returned by every `/api/v1` error response.

@@ -92,7 +92,7 @@ func run(ctx context.Context) error {
 
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.port,
-		Handler:           server.New(api.NewProviderRepository(providerSvc), api.NewCredentialRepository(providerSvc, credentialSvc)),
+		Handler:           server.New(api.NewProviderRepository(providerSvc), api.NewCredentialRepository(providerSvc, credentialSvc), api.NewSnapshotRepository(providerSvc, db)),
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       readTimeout,
 		WriteTimeout:      writeTimeout,
