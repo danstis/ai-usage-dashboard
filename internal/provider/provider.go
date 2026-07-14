@@ -59,16 +59,19 @@ var Registry = []Metadata{
 
 // Service merges a compiled-in provider registry with persisted enabled
 // state from a store.ProviderRepository. It is the single place that knows
-// how to reconcile the two and answer provider queries.
+// how to reconcile the two and answer provider queries. It also owns the
+// runtime Fetcher registry (P2/S1) so callers can poll usage without
+// juggling two structures.
 type Service struct {
 	registry []Metadata
 	repo     store.ProviderRepository
+	fetchers *runtimeRegistry
 }
 
 // NewService builds a Service backed by repo, serving the given registry.
 // Production callers pass Registry; tests pass a small fixture registry.
 func NewService(repo store.ProviderRepository, registry []Metadata) *Service {
-	return &Service{repo: repo, registry: registry}
+	return &Service{repo: repo, registry: registry, fetchers: newRuntimeRegistry()}
 }
 
 func (s *Service) metadata(id string) (Metadata, bool) {
