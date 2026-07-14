@@ -231,7 +231,7 @@ func TestRuntimeRegistry_ReregisteringSameIDPanics(t *testing.T) {
 	reg.register(meta.ID, newFakeFetcher(meta, nil))
 
 	defer func() {
-		if r := recover(); r == nil {
+		if recover() == nil {
 			t.Fatal("expected panic on duplicate register, got none")
 		}
 	}()
