@@ -26,11 +26,11 @@ jobs:
       - name: Deduplicate CHANGELOG entries
         if: steps.release-please.outputs.pr
         env:
-          PR_NUMBER: ${{ steps.release-please.outputs.pr }}
+          PR_JSON: ${{ steps.release-please.outputs.pr }}
         run: |
           set -euo pipefail
 
-          BRANCH=$(gh pr view "$PR_NUMBER" --json headRefName -q .headRefName)
+          BRANCH=$(echo "$PR_JSON" | jq -r '.headBranchName')
           echo "Release PR branch: $BRANCH"
 
           git fetch origin "$BRANCH"
