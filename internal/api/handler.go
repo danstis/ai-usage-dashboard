@@ -27,13 +27,14 @@ type ProviderRepository interface {
 // id, structured logging, panic recovery) wrapped around the versioned
 // routes, plus a structured 404 for anything under /api/v1 that isn't
 // registered.
-func NewHandler(repo ProviderRepository, credentials CredentialRepository) http.Handler {
+func NewHandler(repo ProviderRepository, credentials CredentialRepository, snapshots UsageGetter) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/providers", handleProvidersCollection(repo))
 	mux.HandleFunc("/api/v1/providers/{id}", handleProviderItem(repo))
 	mux.HandleFunc("/api/v1/providers/{id}/enable", handleProviderEnable(repo))
 	mux.HandleFunc("/api/v1/providers/{id}/disable", handleProviderDisable(repo))
 	mux.HandleFunc("/api/v1/providers/{id}/credentials", handleProviderCredentials(credentials))
+	mux.HandleFunc("/api/v1/providers/{id}/usage", handleProviderUsage(snapshots))
 	mux.HandleFunc("/api/v1/", handleNotFound)
 
 	return chain(withRequestID, withLogging, withRecovery)(mux)
