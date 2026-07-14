@@ -8,9 +8,9 @@ import (
 	"github.com/danstis/ai-usage-dashboard/internal/store"
 )
 
-// NewSnapshotRepository adapts a *provider.Service (provider-id validation)
+// NewUsageGetter adapts a *provider.Service (provider-id validation)
 // and a store.SnapshotRepository (persisted snapshots) to the
-// SnapshotRepository seam the usage handler depends on.
+// UsageGetter seam the usage handler depends on.
 //
 // Architect decision 4 (BSOD-61): GetUsage returns 200 with a pending
 // snapshot (CollectedAt nil, no metrics) for a known provider that has never
@@ -18,7 +18,7 @@ import (
 // rather than propagating it as a 404. Only an unknown provider id (checked
 // via providers.Get first) surfaces as store.ErrNotFound to the handler,
 // which the handler maps to 404.
-func NewSnapshotRepository(providers *provider.Service, snapshots store.SnapshotRepository) SnapshotRepository {
+func NewUsageGetter(providers *provider.Service, snapshots store.SnapshotRepository) UsageGetter {
 	return snapshotServiceAdapter{providers: providers, snapshots: snapshots}
 }
 

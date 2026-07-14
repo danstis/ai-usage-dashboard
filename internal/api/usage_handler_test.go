@@ -49,7 +49,7 @@ func newUsageTestHandler(t *testing.T) (http.Handler, store.Store) {
 	handler := NewHandler(
 		NewProviderRepository(providerSvc),
 		NewCredentialRepository(providerSvc, credentialSvc),
-		NewSnapshotRepository(providerSvc, db),
+		NewUsageGetter(providerSvc, db),
 	)
 	return handler, db
 }

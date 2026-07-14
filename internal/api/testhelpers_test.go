@@ -25,19 +25,18 @@ func (stubCredentialRepository) DeleteCredentials(_ context.Context, _ string) e
 	return nil
 }
 
-// stubSnapshotRepository is a no-op test double for SnapshotRepository,
-// sufficient for handler tests that don't exercise the usage endpoint.
-type stubSnapshotRepository struct{}
+// stubUsageGetter is a no-op test double for UsageGetter, sufficient for
+// handler tests that don't exercise the usage endpoint.
+type stubUsageGetter struct{}
 
-func (stubSnapshotRepository) GetUsage(_ context.Context, _ string) (UsageSnapshot, error) {
+func (stubUsageGetter) GetUsage(_ context.Context, _ string) (UsageSnapshot, error) {
 	return UsageSnapshot{}, nil
 }
 
 // newHandler builds a handler with no-op CredentialRepository and
-// SnapshotRepository stubs, for tests that only exercise the provider
-// endpoints.
+// UsageGetter stubs, for tests that only exercise the provider endpoints.
 func newHandler(providers ProviderRepository) http.Handler {
-	return NewHandler(providers, stubCredentialRepository{}, stubSnapshotRepository{})
+	return NewHandler(providers, stubCredentialRepository{}, stubUsageGetter{})
 }
 
 // assertStatus fails the test if rec.Code does not equal want.

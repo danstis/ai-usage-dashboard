@@ -13,7 +13,7 @@ import (
 // New constructs the top-level HTTP handler for the service, serving the
 // provider registry endpoints from providers, the credential endpoints from
 // credentials, and the usage snapshot endpoint from snapshots.
-func New(providers api.ProviderRepository, credentials api.CredentialRepository, snapshots api.SnapshotRepository) http.Handler {
+func New(providers api.ProviderRepository, credentials api.CredentialRepository, snapshots api.UsageGetter) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealthz)
 	mux.HandleFunc("GET /swaggerui", docs.HandleUI)
