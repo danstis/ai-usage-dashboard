@@ -42,6 +42,26 @@ type CredentialField struct {
 	Secret bool `json:"secret"`
 }
 
+// CredentialPresence Whether a declared credential field currently has a stored value.
+type CredentialPresence struct {
+	// Configured Whether a value is currently stored for this field.
+	Configured bool `json:"configured"`
+
+	// Name Machine-readable field key (e.g. `api_key`).
+	Name string `json:"name"`
+}
+
+// CredentialPresenceList defines model for CredentialPresenceList.
+type CredentialPresenceList struct {
+	Fields []CredentialPresence `json:"fields"`
+}
+
+// CredentialValues Full set of credential values for a provider, keyed by declared field name. Write-only: this payload is never echoed back by any read path.
+type CredentialValues struct {
+	// Values Field name → secret value. Must match the provider's declared credential fields exactly — unknown or missing keys are rejected.
+	Values map[string]string `json:"values"`
+}
+
 // Error Canonical error envelope returned by every `/api/v1` error response.
 type Error struct {
 	Error struct {
@@ -82,3 +102,12 @@ type InternalError = Error
 
 // NotFound Canonical error envelope returned by every `/api/v1` error response.
 type NotFound = Error
+
+// UnsupportedMediaType Canonical error envelope returned by every `/api/v1` error response.
+type UnsupportedMediaType = Error
+
+// ValidationError Canonical error envelope returned by every `/api/v1` error response.
+type ValidationError = Error
+
+// SetProviderCredentialsJSONRequestBody defines body for SetProviderCredentials for application/json ContentType.
+type SetProviderCredentialsJSONRequestBody = CredentialValues

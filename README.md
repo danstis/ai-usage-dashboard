@@ -29,6 +29,12 @@ make run        # go run ./cmd/aud
 (`sonar-project.properties`). The file is matched by the `*.out` rule in
 `.gitignore`.
 
+`make run` requires `AUD_MASTER_KEY` to be set (see [Configuration](#configuration)):
+
+```sh
+AUD_MASTER_KEY=$(openssl rand -base64 32) make run
+```
+
 ## Configuration
 
 The service reads its configuration from environment variables. `loadConfig`
@@ -38,7 +44,7 @@ server starts.
 | Variable            | Default          | Description                                                                  |
 | ------------------- | ---------------- | ----------------------------------------------------------------------------- |
 | `AUD_HTTP_PORT`      | `8080`           | TCP port the HTTP server binds to.                                            |
-| `AUD_MASTER_KEY`     | _(none)_         | Standard base64, must decode to exactly 32 bytes (AES-256). Optional in P1 — absent means boot proceeds with no credential features. If set, an invalid encoding or wrong length fails boot with a clear error; the value is never logged. Will become required once the AES-256-GCM credential store lands. |
+| `AUD_MASTER_KEY`     | _(required)_     | Standard base64, must decode to exactly 32 bytes (AES-256), used to encrypt provider credentials at rest. **Required** — boot fails fast if it is unset, not valid base64, or the wrong length; the value is never logged. Generate one with `openssl rand -base64 32`. |
 | `AUD_POLL_INTERVAL`  | `5m`              | Parsed as a Go `time.Duration` (e.g. `90s`, `5m`). An invalid value fails boot. |
 | `AUD_DB_PATH`        | `./data/aud.db`  | Filesystem path to the SQLite database file.                                  |
 

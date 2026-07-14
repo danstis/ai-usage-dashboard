@@ -80,7 +80,7 @@ func TestNew_CreatesParentDirectory(t *testing.T) {
 	}
 }
 
-func newTestStore(t *testing.T) store.ProviderStore {
+func newTestStore(t *testing.T) store.Store {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "aud.db")
 	s, err := New(context.Background(), dbPath)

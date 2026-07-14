@@ -10,9 +10,20 @@ import (
 // with the given HTTP status. Callers on 5xx paths must pass a generic
 // message — internal detail is never sent to the client, only logged.
 func writeError(w http.ResponseWriter, status int, code ErrorErrorCode, message string) {
+	writeErrorWithDetails(w, status, code, message, nil)
+}
+
+// writeErrorWithDetails is writeError plus the optional structured `details`
+// field (e.g. missing/unknown credential field names on a validation_error).
+// details is omitted from the envelope when empty.
+func writeErrorWithDetails(w http.ResponseWriter, status int, code ErrorErrorCode, message string, details map[string]any) {
 	var body Error
 	body.Error.Code = code
 	body.Error.Message = message
+	if len(details) > 0 {
+		d := map[string]interface{}(details)
+		body.Error.Details = &d
+	}
 
 	writeJSON(w, status, body)
 }

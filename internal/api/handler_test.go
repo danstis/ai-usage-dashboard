@@ -67,7 +67,7 @@ func (s *stubProviderRepository) DisableProvider(_ context.Context, id string) (
 func TestNewHandler_ListProvidersEmpty(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler(newStubProviderRepository())
+	handler := newHandler(newStubProviderRepository())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers", nil)
 	rec := httptest.NewRecorder()
@@ -88,7 +88,7 @@ func TestNewHandler_ListProvidersEmpty(t *testing.T) {
 func TestNewHandler_ListProvidersReturnsSeeded(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler(newStubProviderRepository(
+	handler := newHandler(newStubProviderRepository(
 		Provider{Id: "openai", Name: "OpenAI", Enabled: false},
 		Provider{Id: "anthropic", Name: "Anthropic", Enabled: true},
 	))
@@ -109,7 +109,7 @@ func TestNewHandler_ListProvidersRepositoryError(t *testing.T) {
 
 	repo := newStubProviderRepository()
 	repo.listErr = errors.New("boom")
-	handler := NewHandler(repo)
+	handler := newHandler(repo)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers", nil)
 	rec := httptest.NewRecorder()
@@ -121,7 +121,7 @@ func TestNewHandler_ListProvidersRepositoryError(t *testing.T) {
 func TestNewHandler_UnknownRouteIsStructured404(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler(newStubProviderRepository())
+	handler := newHandler(newStubProviderRepository())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/nope", nil)
 	rec := httptest.NewRecorder()
@@ -133,7 +133,7 @@ func TestNewHandler_UnknownRouteIsStructured404(t *testing.T) {
 func TestNewHandler_MethodNotAllowedIsStructured405(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler(newStubProviderRepository())
+	handler := newHandler(newStubProviderRepository())
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/providers", nil)
 	rec := httptest.NewRecorder()
@@ -154,7 +154,7 @@ func TestNewHandler_MethodNotAllowedIsStructured405(t *testing.T) {
 func TestNewHandler_PanicRecoveredAsStructured500(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler(panickingRepository{})
+	handler := newHandler(panickingRepository{})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers", nil)
 	rec := httptest.NewRecorder()
@@ -181,7 +181,7 @@ func (panickingRepository) DisableProvider(_ context.Context, _ string) (Provide
 func TestNewHandler_GetProvider(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler(newStubProviderRepository(
+	handler := newHandler(newStubProviderRepository(
 		Provider{Id: "openai", Name: "OpenAI", Enabled: true},
 	))
 
@@ -200,7 +200,7 @@ func TestNewHandler_GetProvider(t *testing.T) {
 func TestNewHandler_GetProvider_UnknownID(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler(newStubProviderRepository())
+	handler := newHandler(newStubProviderRepository())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers/does-not-exist", nil)
 	rec := httptest.NewRecorder()
@@ -212,7 +212,7 @@ func TestNewHandler_GetProvider_UnknownID(t *testing.T) {
 func TestNewHandler_GetProvider_MethodNotAllowed(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler(newStubProviderRepository(Provider{Id: "openai"}))
+	handler := newHandler(newStubProviderRepository(Provider{Id: "openai"}))
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/providers/openai", nil)
 	rec := httptest.NewRecorder()
@@ -227,7 +227,7 @@ func TestNewHandler_GetProvider_MethodNotAllowed(t *testing.T) {
 func TestNewHandler_EnableProvider(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler(newStubProviderRepository(
+	handler := newHandler(newStubProviderRepository(
 		Provider{Id: "openai", Name: "OpenAI", Enabled: false},
 	))
 
@@ -246,7 +246,7 @@ func TestNewHandler_EnableProvider(t *testing.T) {
 func TestNewHandler_EnableProvider_IsIdempotent(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler(newStubProviderRepository(
+	handler := newHandler(newStubProviderRepository(
 		Provider{Id: "openai", Name: "OpenAI", Enabled: true},
 	))
 
@@ -267,7 +267,7 @@ func TestNewHandler_EnableProvider_IsIdempotent(t *testing.T) {
 func TestNewHandler_EnableProvider_UnknownID(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler(newStubProviderRepository())
+	handler := newHandler(newStubProviderRepository())
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/providers/does-not-exist/enable", nil)
 	rec := httptest.NewRecorder()
@@ -279,7 +279,7 @@ func TestNewHandler_EnableProvider_UnknownID(t *testing.T) {
 func TestNewHandler_EnableProvider_MethodNotAllowed(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler(newStubProviderRepository(Provider{Id: "openai"}))
+	handler := newHandler(newStubProviderRepository(Provider{Id: "openai"}))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers/openai/enable", nil)
 	rec := httptest.NewRecorder()
@@ -294,7 +294,7 @@ func TestNewHandler_EnableProvider_MethodNotAllowed(t *testing.T) {
 func TestNewHandler_DisableProvider(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler(newStubProviderRepository(
+	handler := newHandler(newStubProviderRepository(
 		Provider{Id: "openai", Name: "OpenAI", Enabled: true},
 	))
 
@@ -313,7 +313,7 @@ func TestNewHandler_DisableProvider(t *testing.T) {
 func TestNewHandler_DisableProvider_IsIdempotent(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler(newStubProviderRepository(
+	handler := newHandler(newStubProviderRepository(
 		Provider{Id: "openai", Name: "OpenAI", Enabled: false},
 	))
 
@@ -334,7 +334,7 @@ func TestNewHandler_DisableProvider_IsIdempotent(t *testing.T) {
 func TestNewHandler_DisableProvider_UnknownID(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler(newStubProviderRepository())
+	handler := newHandler(newStubProviderRepository())
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/providers/does-not-exist/disable", nil)
 	rec := httptest.NewRecorder()
@@ -346,7 +346,7 @@ func TestNewHandler_DisableProvider_UnknownID(t *testing.T) {
 func TestNewHandler_DisableProvider_MethodNotAllowed(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler(newStubProviderRepository(Provider{Id: "openai"}))
+	handler := newHandler(newStubProviderRepository(Provider{Id: "openai"}))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers/openai/disable", nil)
 	rec := httptest.NewRecorder()

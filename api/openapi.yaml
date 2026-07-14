@@ -82,6 +82,67 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
+  /providers/{id}/credentials:
+    put:
+      operationId: setProviderCredentials
+      tags: [providers]
+      summary: >-
+        Set every credential value for a provider (full replace). The request
+        must supply exactly the provider's declared credential fields —
+        unknown or missing fields are rejected. Values are encrypted at rest
+        and are never returned by any read path.
+      parameters:
+        - $ref: "#/components/parameters/ProviderId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CredentialValues"
+      responses:
+        "204":
+          description: Credentials stored.
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    get:
+      operationId: getProviderCredentials
+      tags: [providers]
+      summary: >-
+        Get presence-only credential status for a provider. Never returns
+        secret material or a masked hint — only whether each declared field
+        currently has a stored value.
+      parameters:
+        - $ref: "#/components/parameters/ProviderId"
+      responses:
+        "200":
+          description: Presence of each of the provider's declared credential fields.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CredentialPresenceList"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      operationId: deleteProviderCredentials
+      tags: [providers]
+      summary: Clear all stored credential values for a provider.
+      parameters:
+        - $ref: "#/components/parameters/ProviderId"
+      responses:
+        "204":
+          description: Credentials cleared.
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   parameters:
     ProviderId:
@@ -124,6 +185,41 @@ components:
           description: Credential fields required to configure this provider.
           items:
             $ref: "#/components/schemas/CredentialField"
+    CredentialValues:
+      type: object
+      description: >-
+        Full set of credential values for a provider, keyed by declared
+        field name. Write-only: this payload is never echoed back by any
+        read path.
+      required: [values]
+      properties:
+        values:
+          type: object
+          description: >-
+            Field name → secret value. Must match the provider's declared
+            credential fields exactly — unknown or missing keys are
+            rejected.
+          additionalProperties:
+            type: string
+    CredentialPresence:
+      type: object
+      description: Whether a declared credential field currently has a stored value.
+      required: [name, configured]
+      properties:
+        name:
+          type: string
+          description: Machine-readable field key (e.g. `api_key`).
+        configured:
+          type: boolean
+          description: Whether a value is currently stored for this field.
+    CredentialPresenceList:
+      type: object
+      required: [fields]
+      properties:
+        fields:
+          type: array
+          items:
+            $ref: "#/components/schemas/CredentialPresence"
     Error:
       type: object
       description: Canonical error envelope returned by every `/api/v1` error response.
@@ -158,6 +254,18 @@ components:
             $ref: "#/components/schemas/Error"
     InternalError:
       description: An unexpected server error occurred. Detail is never leaked to clients.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ValidationError:
+      description: The request failed validation.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    UnsupportedMediaType:
+      description: The request's Content-Type is not supported.
       content:
         application/json:
           schema:

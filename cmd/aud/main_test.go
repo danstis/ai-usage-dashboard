@@ -18,7 +18,17 @@ import (
 	"github.com/danstis/ai-usage-dashboard/internal/provider"
 )
 
+// setValidMasterKey sets AUD_MASTER_KEY to a well-formed (all-zero) 32-byte
+// key so tests that don't care about master-key behaviour can still reach
+// loadConfig's other branches now that the key is required at boot.
+func setValidMasterKey(t *testing.T) {
+	t.Helper()
+	t.Setenv("AUD_MASTER_KEY", base64.StdEncoding.EncodeToString(make([]byte, masterKeyLen)))
+}
+
 func TestLoadConfig_Defaults(t *testing.T) {
+	setValidMasterKey(t)
+
 	cfg, err := loadConfig()
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
@@ -33,12 +43,13 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	if cfg.dbPath != defaultDBPath {
 		t.Errorf("expected default db path %q, got %q", defaultDBPath, cfg.dbPath)
 	}
-	if cfg.masterKey != nil {
-		t.Errorf("expected no master key by default, got %d bytes", len(cfg.masterKey))
+	if len(cfg.masterKey) != masterKeyLen {
+		t.Errorf("expected a %d-byte master key, got %d bytes", masterKeyLen, len(cfg.masterKey))
 	}
 }
 
 func TestLoadConfig_HTTPPortOverride(t *testing.T) {
+	setValidMasterKey(t)
 	t.Setenv("AUD_HTTP_PORT", "9090")
 
 	cfg, err := loadConfig()
@@ -51,6 +62,7 @@ func TestLoadConfig_HTTPPortOverride(t *testing.T) {
 }
 
 func TestLoadConfig_DBPathOverride(t *testing.T) {
+	setValidMasterKey(t)
 	t.Setenv("AUD_DB_PATH", "/tmp/custom.db")
 
 	cfg, err := loadConfig()
@@ -63,6 +75,7 @@ func TestLoadConfig_DBPathOverride(t *testing.T) {
 }
 
 func TestLoadConfig_PollIntervalOverride(t *testing.T) {
+	setValidMasterKey(t)
 	t.Setenv("AUD_POLL_INTERVAL", "10s")
 
 	cfg, err := loadConfig()
@@ -84,12 +97,9 @@ func TestLoadConfig_PollIntervalInvalid(t *testing.T) {
 }
 
 func TestLoadConfig_MasterKeyAbsent(t *testing.T) {
-	cfg, err := loadConfig()
-	if err != nil {
-		t.Fatalf("expected no error when AUD_MASTER_KEY is unset, got: %v", err)
-	}
-	if cfg.masterKey != nil {
-		t.Errorf("expected nil master key, got %d bytes", len(cfg.masterKey))
+	_, err := loadConfig()
+	if err == nil {
+		t.Fatal("expected an error when AUD_MASTER_KEY is unset, got nil")
 	}
 }
 
@@ -272,6 +282,7 @@ func TestRun_ConfigErrorReturnsEarly(t *testing.T) {
 }
 
 func TestRun_StoreOpenErrorReturnsEarly(t *testing.T) {
+	setValidMasterKey(t)
 	// A db path nested under a regular file can never have its parent
 	// directory created, forcing sqlite.New to fail before the listener
 	// starts.
@@ -288,6 +299,7 @@ func TestRun_StoreOpenErrorReturnsEarly(t *testing.T) {
 }
 
 func TestRun_ListenErrorReturnsError(t *testing.T) {
+	setValidMasterKey(t)
 	t.Setenv("AUD_HTTP_PORT", "not-a-valid-port-format-at-all")
 	t.Setenv("AUD_DB_PATH", filepath.Join(t.TempDir(), "aud.db"))
 
@@ -328,6 +340,7 @@ func TestRun_GracefulShutdown(t *testing.T) {
 // fresh store, and GET /api/v1/providers lists every seeded provider,
 // disabled by default.
 func TestRun_ReconcilesAndServesProviders(t *testing.T) {
+	setValidMasterKey(t)
 	port := freePort(t)
 	t.Setenv("AUD_HTTP_PORT", port)
 	t.Setenv("AUD_DB_PATH", filepath.Join(t.TempDir(), "aud.db"))
@@ -377,6 +390,7 @@ func TestRun_ReconcilesAndServesProviders(t *testing.T) {
 }
 
 func TestRun_AlreadyCancelledContext(t *testing.T) {
+	setValidMasterKey(t)
 	t.Setenv("AUD_HTTP_PORT", freePort(t))
 	t.Setenv("AUD_DB_PATH", filepath.Join(t.TempDir(), "aud.db"))
 
@@ -420,6 +434,7 @@ func TestBootstrap_ConfigErrorReturnsBeforeServer(t *testing.T) {
 // cleanly, and bootstrap() returns nil — the same path main() takes after a
 // SIGINT/SIGTERM.
 func TestBootstrap_CleanShutdownReturnsNil(t *testing.T) {
+	setValidMasterKey(t)
 	t.Setenv("AUD_HTTP_PORT", freePort(t))
 	t.Setenv("AUD_DB_PATH", filepath.Join(t.TempDir(), "aud.db"))
 

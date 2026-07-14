@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -68,7 +69,7 @@ func TestContract_ProviderEndpointsConformToSpec(t *testing.T) {
 	t.Parallel()
 
 	router := loadSpecRouter(t)
-	handler := NewHandler(newStubProviderRepository(
+	handler := newHandler(newStubProviderRepository(
 		Provider{
 			Id:      "openai",
 			Name:    "OpenAI",
@@ -99,6 +100,46 @@ func TestContract_ProviderEndpointsConformToSpec(t *testing.T) {
 			handler.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.path, nil))
 
 			assertConformsToSpec(t, router, httptest.NewRequest(tc.method, tc.path, nil), rec)
+		})
+	}
+}
+
+func TestContract_CredentialEndpointsConformToSpec(t *testing.T) {
+	t.Parallel()
+
+	router := loadSpecRouter(t)
+	handler := newCredentialTestHandler(t)
+
+	newBodyReq := func(method, path, body, contentType string) *http.Request {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		if contentType != "" {
+			req.Header.Set("Content-Type", contentType)
+		}
+		return req
+	}
+
+	cases := []struct {
+		name        string
+		method      string
+		path        string
+		body        string
+		contentType string
+	}{
+		{"put credentials", http.MethodPut, "/api/v1/providers/openai/credentials", `{"values":{"api_key":"v","org_id":"v"}}`, "application/json"},
+		{"get credentials", http.MethodGet, "/api/v1/providers/openai/credentials", "", ""},
+		{"delete credentials", http.MethodDelete, "/api/v1/providers/openai/credentials", "", ""},
+		{"put unknown provider is 404", http.MethodPut, "/api/v1/providers/does-not-exist/credentials", `{"values":{}}`, "application/json"},
+		{"get unknown provider is 404", http.MethodGet, "/api/v1/providers/does-not-exist/credentials", "", ""},
+		{"put invalid fields is 400", http.MethodPut, "/api/v1/providers/openai/credentials", `{"values":{"api_key":"v"}}`, "application/json"},
+		{"put wrong content type is 415", http.MethodPut, "/api/v1/providers/openai/credentials", "not-json", "text/plain"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, newBodyReq(tc.method, tc.path, tc.body, tc.contentType))
+
+			assertConformsToSpec(t, router, newBodyReq(tc.method, tc.path, tc.body, tc.contentType), rec)
 		})
 	}
 }
