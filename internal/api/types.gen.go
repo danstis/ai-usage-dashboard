@@ -133,6 +133,9 @@ type UsageSnapshot struct {
 // ProviderId defines model for ProviderId.
 type ProviderId = string
 
+// Conflict Canonical error envelope returned by every `/api/v1` error response.
+type Conflict = Error
+
 // InternalError Canonical error envelope returned by every `/api/v1` error response.
 type InternalError = Error
 

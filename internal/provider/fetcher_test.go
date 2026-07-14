@@ -238,6 +238,19 @@ func TestRuntimeRegistry_ReregisteringSameIDPanics(t *testing.T) {
 	reg.register(meta.ID, newFakeFetcher(meta, nil))
 }
 
+func TestService_RegisterFetcherPanicsOnUnknownID(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(newFakeRepo(), fakeRegistry)
+
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic when registering a Fetcher whose id is not in the metadata registry, got none")
+		}
+	}()
+	svc.RegisterFetcher(newFakeFetcher(Metadata{ID: "typo-id"}, nil))
+}
+
 func TestService_PollingFailsWhenNoFetcherRegistered(t *testing.T) {
 	t.Parallel()
 

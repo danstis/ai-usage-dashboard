@@ -58,10 +58,18 @@ func (stubUsageGetter) GetUsage(_ context.Context, _ string) (api.UsageSnapshot,
 	return api.UsageSnapshot{}, nil
 }
 
+// stubUsageRefresher is a no-op api.UsageRefresher, sufficient for
+// exercising routes (like /healthz) that don't depend on refresh state.
+type stubUsageRefresher struct{}
+
+func (stubUsageRefresher) RefreshUsage(_ context.Context, _ string) (api.UsageSnapshot, error) {
+	return api.UsageSnapshot{}, nil
+}
+
 func TestHealthz(t *testing.T) {
 	t.Parallel()
 
-	handler := server.New(stubProviderRepository{}, stubCredentialRepository{}, stubUsageGetter{})
+	handler := server.New(stubProviderRepository{}, stubCredentialRepository{}, stubUsageGetter{}, stubUsageRefresher{})
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
@@ -91,7 +99,7 @@ func TestHealthz(t *testing.T) {
 func TestSwaggerUI(t *testing.T) {
 	t.Parallel()
 
-	handler := server.New(stubProviderRepository{}, stubCredentialRepository{}, stubUsageGetter{})
+	handler := server.New(stubProviderRepository{}, stubCredentialRepository{}, stubUsageGetter{}, stubUsageRefresher{})
 
 	req := httptest.NewRequest(http.MethodGet, "/swaggerui", nil)
 	rec := httptest.NewRecorder()
@@ -109,7 +117,7 @@ func TestSwaggerUI(t *testing.T) {
 func TestSwaggerUISpec(t *testing.T) {
 	t.Parallel()
 
-	handler := server.New(stubProviderRepository{}, stubCredentialRepository{}, stubUsageGetter{})
+	handler := server.New(stubProviderRepository{}, stubCredentialRepository{}, stubUsageGetter{}, stubUsageRefresher{})
 
 	req := httptest.NewRequest(http.MethodGet, "/swaggerui/openapi.yaml", nil)
 	rec := httptest.NewRecorder()
@@ -143,7 +151,7 @@ func (w *errWriter) Write([]byte) (int, error) {
 func TestHealthz_EncodeErrorDoesNotPanic(t *testing.T) {
 	t.Parallel()
 
-	handler := server.New(stubProviderRepository{}, stubCredentialRepository{}, stubUsageGetter{})
+	handler := server.New(stubProviderRepository{}, stubCredentialRepository{}, stubUsageGetter{}, stubUsageRefresher{})
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	w := &errWriter{header: http.Header{}}

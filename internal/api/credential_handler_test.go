@@ -51,7 +51,7 @@ func newCredentialTestHandler(t *testing.T) http.Handler {
 	key := make([]byte, 32)
 	credentialSvc := credential.NewService(db, key)
 
-	return NewHandler(NewProviderRepository(providerSvc), NewCredentialRepository(providerSvc, credentialSvc), NewUsageGetter(providerSvc, db))
+	return NewHandler(NewProviderRepository(providerSvc), NewCredentialRepository(providerSvc, credentialSvc), NewUsageGetter(providerSvc, db), stubUsageRefresher{})
 }
 
 func putCredentials(t *testing.T, handler http.Handler, id, body string) *httptest.ResponseRecorder {

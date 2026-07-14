@@ -50,6 +50,7 @@ func newUsageTestHandler(t *testing.T) (http.Handler, store.Store) {
 		NewProviderRepository(providerSvc),
 		NewCredentialRepository(providerSvc, credentialSvc),
 		NewUsageGetter(providerSvc, db),
+		stubUsageRefresher{},
 	)
 	return handler, db
 }
