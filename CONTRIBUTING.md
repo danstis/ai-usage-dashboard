@@ -19,6 +19,11 @@ Thanks for contributing to this project.
 - Use [Conventional Commits](https://www.conventionalcommits.org/) for
   every PR title and squash commit (see "Releases" below). release-please
   uses these prefixes to decide version bumps and changelog entries.
+- Merge pull requests using **"Squash and merge"**. The repo allows merge,
+  rebase, and squash; squash is the only option that keeps `main` linear
+  and avoids duplicate entries in the release-please `CHANGELOG.md` (a
+  merge commit and the underlying conventional commit would otherwise
+  both be parsed and produce the same changelog entry).
 
 ## Suggested PR checklist
 

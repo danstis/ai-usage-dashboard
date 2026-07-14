@@ -13,6 +13,71 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
-      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+
+      - id: release-please
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5
         with:
           release-type: go
+          config-file: release-please-config.json
+
+      - name: Deduplicate CHANGELOG entries
+        if: steps.release-please.outputs.pr
+        env:
+          PR_JSON: ${{ steps.release-please.outputs.pr }}
+        run: |
+          set -euo pipefail
+
+          BRANCH=$(echo "$PR_JSON" | jq -r '.headBranchName')
+          echo "Release PR branch: $BRANCH"
+
+          git fetch origin "$BRANCH"
+          git checkout -B "$BRANCH" "origin/$BRANCH"
+
+          python3 - <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          p = Path("CHANGELOG.md")
+          if not p.exists():
+              print("CHANGELOG.md not found; nothing to deduplicate")
+              sys.exit(0)
+
+          content = p.read_text()
+          lines = content.split("\n")
+          seen = set()
+          deduped = []
+          duplicates_removed = 0
+
+          for line in lines:
+              m = re.match(r"^(\* .+?) \(\[([a-f0-9]+)\]\([^)]+\)\)$", line)
+              if m:
+                  key = m.group(1)
+                  if key in seen:
+                      print(f"  removing duplicate: {line}")
+                      duplicates_removed += 1
+                      continue
+                  seen.add(key)
+              deduped.append(line)
+
+          if duplicates_removed == 0:
+              print("No duplicate entries to remove")
+              sys.exit(0)
+
+          p.write_text("\n".join(deduped))
+          print(f"Removed {duplicates_removed} duplicate entries")
+          PY
+
+          if git diff --quiet HEAD -- CHANGELOG.md; then
+              echo "No CHANGELOG.md changes after deduplication"
+              exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git commit --amend --no-edit
+          git push --force-with-lease origin "$BRANCH"
