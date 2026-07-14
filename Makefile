@@ -36,7 +36,7 @@ docker:
 
 .PHONY: smoke
 smoke:
-	docker run -d --rm -p $(PORT):$(PORT) --name aud-smoke $(IMAGE)
+	docker run -d --rm -p $(PORT):$(PORT) -e AUD_MASTER_KEY="$$(openssl rand -base64 32)" --name aud-smoke $(IMAGE)
 	sleep 1
 	curl -fsS http://localhost:$(PORT)/healthz
 	docker stop aud-smoke

@@ -1,10 +1,35 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 )
+
+// stubCredentialRepository is a no-op test double for CredentialRepository,
+// sufficient for handler tests that don't exercise the credentials
+// endpoints.
+type stubCredentialRepository struct{}
+
+func (stubCredentialRepository) SetCredentials(_ context.Context, _ string, _ map[string]string) error {
+	return nil
+}
+
+func (stubCredentialRepository) GetCredentialPresence(_ context.Context, _ string) ([]CredentialPresence, error) {
+	return nil, nil
+}
+
+func (stubCredentialRepository) DeleteCredentials(_ context.Context, _ string) error {
+	return nil
+}
+
+// newHandler builds a handler with a no-op CredentialRepository stub, for
+// tests that only exercise the provider endpoints.
+func newHandler(providers ProviderRepository) http.Handler {
+	return NewHandler(providers, stubCredentialRepository{})
+}
 
 // assertStatus fails the test if rec.Code does not equal want.
 func assertStatus(t *testing.T, rec *httptest.ResponseRecorder, want int) {

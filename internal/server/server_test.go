@@ -33,10 +33,27 @@ func (stubProviderRepository) DisableProvider(_ context.Context, _ string) (api.
 	return api.Provider{}, nil
 }
 
+// stubCredentialRepository is a no-op api.CredentialRepository, sufficient
+// for exercising routes (like /healthz) that don't depend on credential
+// state.
+type stubCredentialRepository struct{}
+
+func (stubCredentialRepository) SetCredentials(_ context.Context, _ string, _ map[string]string) error {
+	return nil
+}
+
+func (stubCredentialRepository) GetCredentialPresence(_ context.Context, _ string) ([]api.CredentialPresence, error) {
+	return nil, nil
+}
+
+func (stubCredentialRepository) DeleteCredentials(_ context.Context, _ string) error {
+	return nil
+}
+
 func TestHealthz(t *testing.T) {
 	t.Parallel()
 
-	handler := server.New(stubProviderRepository{})
+	handler := server.New(stubProviderRepository{}, stubCredentialRepository{})
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
@@ -66,7 +83,7 @@ func TestHealthz(t *testing.T) {
 func TestSwaggerUI(t *testing.T) {
 	t.Parallel()
 
-	handler := server.New(stubProviderRepository{})
+	handler := server.New(stubProviderRepository{}, stubCredentialRepository{})
 
 	req := httptest.NewRequest(http.MethodGet, "/swaggerui", nil)
 	rec := httptest.NewRecorder()
@@ -84,7 +101,7 @@ func TestSwaggerUI(t *testing.T) {
 func TestSwaggerUISpec(t *testing.T) {
 	t.Parallel()
 
-	handler := server.New(stubProviderRepository{})
+	handler := server.New(stubProviderRepository{}, stubCredentialRepository{})
 
 	req := httptest.NewRequest(http.MethodGet, "/swaggerui/openapi.yaml", nil)
 	rec := httptest.NewRecorder()
@@ -118,7 +135,7 @@ func (w *errWriter) Write([]byte) (int, error) {
 func TestHealthz_EncodeErrorDoesNotPanic(t *testing.T) {
 	t.Parallel()
 
-	handler := server.New(stubProviderRepository{})
+	handler := server.New(stubProviderRepository{}, stubCredentialRepository{})
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	w := &errWriter{header: http.Header{}}

@@ -35,7 +35,7 @@ func TestPersistence_EnabledStateSurvivesRestart(t *testing.T) {
 	if err := svc1.Reconcile(ctx); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
-	handler1 := NewHandler(NewProviderRepository(svc1))
+	handler1 := newHandler(NewProviderRepository(svc1))
 
 	// All providers start disabled by default.
 	rec := httptest.NewRecorder()
@@ -75,7 +75,7 @@ func TestPersistence_EnabledStateSurvivesRestart(t *testing.T) {
 	if err := svc2.Reconcile(ctx); err != nil {
 		t.Fatalf("reconcile after restart: %v", err)
 	}
-	handler2 := NewHandler(NewProviderRepository(svc2))
+	handler2 := newHandler(NewProviderRepository(svc2))
 
 	rec = httptest.NewRecorder()
 	handler2.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/providers/openai", nil))

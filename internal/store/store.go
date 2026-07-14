@@ -37,9 +37,32 @@ type ProviderRepository interface {
 	SetEnabled(ctx context.Context, id string, enabled bool) error
 }
 
-// ProviderStore is a ProviderRepository bound to a lifecycle-managed
-// database handle. Callers must Close it when done.
-type ProviderStore interface {
+// CredentialRepository manages persisted, encrypted credential field
+// values. It never exposes a decryption path itself: GetSecret returns the
+// raw ciphertext blob exactly as stored, and only
+// internal/credential.Service.Reveal (consumed by the future fetch/
+// scheduler path, P2/S5) decrypts it via internal/secret. No HTTP read path
+// may call GetSecret.
+type CredentialRepository interface {
+	// Upsert stores ciphertext for (providerID, field), creating the row if
+	// it doesn't exist yet or replacing the value if it does.
+	Upsert(ctx context.Context, providerID, field string, ciphertext []byte) error
+	// Presence returns which fields currently have a stored value for
+	// providerID, keyed by field name. A field absent from the map has no
+	// stored value.
+	Presence(ctx context.Context, providerID string) (map[string]bool, error)
+	// GetSecret returns the raw ciphertext blob stored for (providerID,
+	// field), or ErrNotFound if no value is stored for that field.
+	GetSecret(ctx context.Context, providerID, field string) ([]byte, error)
+	// Delete clears every stored value for providerID. It is idempotent —
+	// deleting a provider with no stored credentials succeeds.
+	Delete(ctx context.Context, providerID string) error
+}
+
+// Store is a lifecycle-managed database handle providing every repository
+// this service persists to. Callers must Close it when done.
+type Store interface {
 	ProviderRepository
+	CredentialRepository
 	Close() error
 }

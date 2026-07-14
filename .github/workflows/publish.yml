@@ -52,7 +52,7 @@ jobs:
 
       - name: Smoke test image
         run: |
-          docker run -d --rm -p 8080:8080 --name aud-smoke "${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}"
+          docker run -d --rm -p 8080:8080 -e AUD_MASTER_KEY="$(openssl rand -base64 32)" --name aud-smoke "${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}"
           for i in $(seq 1 10); do
             if curl -fsS http://localhost:8080/healthz; then
               echo "healthz OK"

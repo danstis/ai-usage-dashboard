@@ -1,7 +1,7 @@
 // Package sqlite provides a pure-Go, CGO-free SQLite implementation of the
 // repository interfaces defined in internal/store. The concrete type is
-// unexported; callers only ever see the store.ProviderStore interface
-// returned by New, so no sqlite-specific type leaks out of this package.
+// unexported; callers only ever see the store.Store interface returned by
+// New, so no sqlite-specific type leaks out of this package.
 package sqlite
 
 import (
@@ -22,18 +22,19 @@ import (
 
 const driverName = "sqlite"
 
-// providerStore is the sqlite-backed implementation of store.ProviderStore.
-type providerStore struct {
+// sqliteStore is the sqlite-backed implementation of store.Store, backing
+// every repository (providers, credentials, ...) behind one connection.
+type sqliteStore struct {
 	db *sql.DB
 }
 
-var _ store.ProviderStore = (*providerStore)(nil)
+var _ store.Store = (*sqliteStore)(nil)
 
 // New opens (creating if necessary) the SQLite database at dbPath, applies
-// any pending migrations, and returns a ready-to-use store.ProviderStore.
-// The parent directory of dbPath is created if it does not already exist.
+// any pending migrations, and returns a ready-to-use store.Store. The
+// parent directory of dbPath is created if it does not already exist.
 // Callers must Close the returned store when done with it.
-func New(ctx context.Context, dbPath string) (store.ProviderStore, error) {
+func New(ctx context.Context, dbPath string) (store.Store, error) {
 	if dir := filepath.Dir(dbPath); dir != "." && dir != "" {
 		if err := os.MkdirAll(dir, 0o750); err != nil {
 			return nil, fmt.Errorf("sqlite: create db directory %s: %w", dir, err)
@@ -62,7 +63,7 @@ func New(ctx context.Context, dbPath string) (store.ProviderStore, error) {
 		return nil, err
 	}
 
-	return &providerStore{db: db}, nil
+	return &sqliteStore{db: db}, nil
 }
 
 // migrate applies every pending goose migration embedded in the migrations
@@ -80,14 +81,14 @@ func migrate(ctx context.Context, db *sql.DB) error {
 }
 
 // Close releases the underlying database handle.
-func (s *providerStore) Close() error {
+func (s *sqliteStore) Close() error {
 	if err := s.db.Close(); err != nil {
 		return fmt.Errorf("sqlite: close: %w", err)
 	}
 	return nil
 }
 
-func (s *providerStore) List(ctx context.Context) ([]store.Provider, error) {
+func (s *sqliteStore) List(ctx context.Context) ([]store.Provider, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, enabled, created_at, updated_at FROM providers ORDER BY id`)
 	if err != nil {
@@ -109,7 +110,7 @@ func (s *providerStore) List(ctx context.Context) ([]store.Provider, error) {
 	return providers, nil
 }
 
-func (s *providerStore) Get(ctx context.Context, id string) (store.Provider, error) {
+func (s *sqliteStore) Get(ctx context.Context, id string) (store.Provider, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, enabled, created_at, updated_at FROM providers WHERE id = ?`, id)
 	p, err := scanProvider(row)
@@ -122,7 +123,7 @@ func (s *providerStore) Get(ctx context.Context, id string) (store.Provider, err
 	return p, nil
 }
 
-func (s *providerStore) Create(ctx context.Context, id string, enabled bool) (store.Provider, error) {
+func (s *sqliteStore) Create(ctx context.Context, id string, enabled bool) (store.Provider, error) {
 	now := time.Now().UTC()
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO providers (id, enabled, created_at, updated_at) VALUES (?, ?, ?, ?)`,
@@ -134,7 +135,7 @@ func (s *providerStore) Create(ctx context.Context, id string, enabled bool) (st
 	return store.Provider{ID: id, Enabled: enabled, CreatedAt: now, UpdatedAt: now}, nil
 }
 
-func (s *providerStore) SetEnabled(ctx context.Context, id string, enabled bool) error {
+func (s *sqliteStore) SetEnabled(ctx context.Context, id string, enabled bool) error {
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE providers SET enabled = ?, updated_at = ? WHERE id = ?`,
 		enabled, time.Now().UTC(), id,

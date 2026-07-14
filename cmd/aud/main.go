@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/danstis/ai-usage-dashboard/internal/api"
+	"github.com/danstis/ai-usage-dashboard/internal/credential"
 	"github.com/danstis/ai-usage-dashboard/internal/provider"
 	"github.com/danstis/ai-usage-dashboard/internal/server"
 	"github.com/danstis/ai-usage-dashboard/internal/store/sqlite"
@@ -87,9 +88,11 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("reconcile providers: %w", err)
 	}
 
+	credentialSvc := credential.NewService(db, cfg.masterKey)
+
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.port,
-		Handler:           server.New(api.NewProviderRepository(providerSvc)),
+		Handler:           server.New(api.NewProviderRepository(providerSvc), api.NewCredentialRepository(providerSvc, credentialSvc)),
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       readTimeout,
 		WriteTimeout:      writeTimeout,
@@ -165,16 +168,18 @@ func loadConfig() (config, error) {
 		cfg.pollInterval = d
 	}
 
-	if v := os.Getenv("AUD_MASTER_KEY"); v != "" {
-		key, err := base64.StdEncoding.DecodeString(v)
-		if err != nil {
-			return config{}, errors.New("AUD_MASTER_KEY: invalid base64 encoding")
-		}
-		if len(key) != masterKeyLen {
-			return config{}, fmt.Errorf("AUD_MASTER_KEY: must decode to %d bytes, got %d", masterKeyLen, len(key))
-		}
-		cfg.masterKey = key
+	v := strings.TrimSpace(os.Getenv("AUD_MASTER_KEY"))
+	if v == "" {
+		return config{}, errors.New("AUD_MASTER_KEY is required (base64-encoded, must decode to 32 bytes — e.g. `openssl rand -base64 32`)")
 	}
+	key, err := base64.StdEncoding.DecodeString(v)
+	if err != nil {
+		return config{}, errors.New("AUD_MASTER_KEY: invalid base64 encoding")
+	}
+	if len(key) != masterKeyLen {
+		return config{}, fmt.Errorf("AUD_MASTER_KEY: must decode to %d bytes, got %d", masterKeyLen, len(key))
+	}
+	cfg.masterKey = key
 
 	return cfg, nil
 }
