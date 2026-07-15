@@ -262,6 +262,7 @@ for the planned future shape).
 | ----------- | ------------ | ----------------------------------- |
 | `openai`    | OpenAI       | `api_key` (`Secret = true`)         |
 | `anthropic` | Anthropic    | `api_key` (`Secret = true`)         |
+| `minimax`   | Minimax Token Plan | `subscription_key` (`Secret = true`) — scaffolded (see note) |
 
 The `api_key` value for each provider is set at runtime via
 `PUT /api/v1/providers/{id}/credentials` (see [HTTP API](#http-api)) and
@@ -272,6 +273,26 @@ a future build is created in the database on first boot.
 
 For the runtime side (how providers are polled and how `UsageMetric` is
 shaped), see [`docs/providers.md`](docs/providers.md).
+
+### Scaffolded providers
+
+`minimax` (Minimax Token Plan) is shipped in a scaffolded state today:
+the metadata + credential field are present in
+[`internal/provider/provider.go`](internal/provider/provider.go) so the
+dashboard lists the provider with `Live: false`, but no fetcher is
+registered in `cmd/aud/main.go`. This is intentional — the public
+documentation publishes the endpoint URL (`GET
+/v1/token_plan/remains`) and the Bearer auth scheme but not the
+response payload shape (see BSOD-91 and
+[`docs/providers-research.md`](docs/providers-research.md) §4). The
+plugin package at [`internal/plugins/minimax`](internal/plugins/minimax)
+exercises the URL, classifies 401/403 as `provider.ErrAuth` so the
+scheduler's auth-cooldown engages, and returns a typed
+`ErrSchemaNotRecognized` error for body shapes it doesn't recognise —
+it never fabricates metrics from unverified fields. A follow-up PR
+once a captured response is available will extend the recognised key
+set, then call `providerSvc.RegisterFetcher(minimax.New())` in
+`cmd/aud/main.go` to flip `Live` to `true`.
 
 ## Database
 

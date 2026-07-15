@@ -60,6 +60,23 @@ var Registry = []Metadata{
 			{Name: "api_key", Label: "API Key", Secret: true},
 		},
 	},
+	// minimax — Minimax Token Plan. The fetcher at
+	// internal/plugins/minimax exercises the documented
+	// GET https://www.minimax.io/v1/token_plan/remains endpoint with the
+	// Subscription Key as Bearer; the response schema is not publicly
+	// documented at spike time (2026-07-15), so this registry entry is
+	// wired as "scaffolded" today (no RegisterFetcher call in main.go →
+	// Provider.Live=false, /refresh returns ErrFetcherNotFound) and flips
+	// to live in a follow-up once a captured response confirms the
+	// payload shape. See internal/plugins/minimax/minimax.go for the
+	// spike finding + parser notes, and BSOD-91 for the research context.
+	{
+		ID:   "minimax",
+		Name: "Minimax Token Plan",
+		CredentialFields: []CredentialField{
+			{Name: "subscription_key", Label: "Subscription Key", Secret: true},
+		},
+	},
 }
 
 // Service merges a compiled-in provider registry with persisted enabled

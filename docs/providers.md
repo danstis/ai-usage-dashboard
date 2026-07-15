@@ -51,6 +51,16 @@ A provider ships in one of two states along this axis:
 | Scaffolded | yes             | no                    | `false`           | no — `ErrFetcherNotFound` / `409 conflict` |
 | Live       | yes             | yes                   | `true`            | yes |
 
+`minimax` is a scaffolded entry today (BSOD-68). The plugin package at
+`internal/plugins/minimax` builds the documented GET request and
+classifies auth + schema outcomes, but the response schema is not
+publicly documented at land time — so the recognised key set in the
+plugin is intentionally narrow and `main.go` does not register the
+fetcher. The follow-up that captures a real response extends the
+recognised key set and toggles the boot-wiring on. See the package
+doc comment for the spike status and `providers-research.md §4` for
+the research context.
+
 ## Plugin package convention
 
 In-tree provider plugins live under `internal/plugins/<provider>/` (e.g.
