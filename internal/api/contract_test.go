@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/danstis/ai-usage-dashboard/internal/provider"
+	"github.com/danstis/ai-usage-dashboard/internal/providertest"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/getkin/kin-openapi/routers"
@@ -176,16 +177,16 @@ func TestContract_RefreshEndpointConformsToSpec(t *testing.T) {
 	router := loadSpecRouter(t)
 	handler, providerSvc, credentialSvc := newRefreshTestHandler(t)
 
-	fetcher := &refreshTestFetcher{
-		meta: provider.Metadata{
+	fetcher := providertest.NewFetcher(
+		provider.Metadata{
 			ID:   "openai",
 			Name: "OpenAI",
 			CredentialFields: []provider.CredentialField{
 				{Name: "api_key", Label: "API Key", Secret: true},
 			},
 		},
-		metrics: []provider.UsageMetric{{Name: "monthly_spend", Window: "month", Unit: "usd_cents", Used: 100}},
-	}
+		[]provider.UsageMetric{{Name: "monthly_spend", Window: "month", Unit: "usd_cents", Used: 100}},
+	)
 	providerSvc.RegisterFetcher(fetcher)
 
 	cases := []struct {

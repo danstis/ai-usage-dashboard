@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/danstis/ai-usage-dashboard/internal/provider"
+	"github.com/danstis/ai-usage-dashboard/internal/providertest"
 )
 
 // waitFor polls cond until it returns true or timeout elapses, failing the
@@ -33,10 +34,10 @@ func TestScheduler_TickCollectsOnlyEnabledProviders(t *testing.T) {
 	}
 	// fake-provider is left disabled.
 
-	enabled := newTestFetcher(provider.Metadata{ID: "no-creds-provider"}, []provider.UsageMetric{
+	enabled := providertest.NewFetcher(provider.Metadata{ID: "no-creds-provider"}, []provider.UsageMetric{
 		{Name: "requests", Window: "day", Unit: "count", Used: 1},
 	})
-	disabled := newTestFetcher(provider.Metadata{ID: "fake-provider"}, nil)
+	disabled := providertest.NewFetcher(provider.Metadata{ID: "fake-provider"}, nil)
 	stack.providers.RegisterFetcher(enabled)
 	stack.providers.RegisterFetcher(disabled)
 
@@ -45,11 +46,11 @@ func TestScheduler_TickCollectsOnlyEnabledProviders(t *testing.T) {
 
 	s.tick(ctx)
 
-	if enabled.callCount() != 1 {
-		t.Errorf("expected enabled provider to be collected once, got %d calls", enabled.callCount())
+	if enabled.CallCount() != 1 {
+		t.Errorf("expected enabled provider to be collected once, got %d calls", enabled.CallCount())
 	}
-	if disabled.callCount() != 0 {
-		t.Errorf("expected disabled provider to never be collected, got %d calls", disabled.callCount())
+	if disabled.CallCount() != 0 {
+		t.Errorf("expected disabled provider to never be collected, got %d calls", disabled.CallCount())
 	}
 }
 
@@ -68,9 +69,9 @@ func TestScheduler_FailingProviderDoesNotStopOtherCollections(t *testing.T) {
 		t.Fatalf("set credentials: %v", err)
 	}
 
-	failing := newTestFetcher(provider.Metadata{ID: "no-creds-provider"}, nil)
-	failing.err = errors.New("upstream timeout")
-	succeeding := newTestFetcher(provider.Metadata{
+	failing := providertest.NewFetcher(provider.Metadata{ID: "no-creds-provider"}, nil)
+	failing.SetError(errors.New("upstream timeout"))
+	succeeding := providertest.NewFetcher(provider.Metadata{
 		ID: "fake-provider",
 		CredentialFields: []provider.CredentialField{
 			{Name: "api_key", Label: "API Key", Secret: true},
@@ -84,8 +85,8 @@ func TestScheduler_FailingProviderDoesNotStopOtherCollections(t *testing.T) {
 
 	s.tick(ctx)
 
-	if failing.callCount() != 1 {
-		t.Errorf("expected failing provider to still be attempted once, got %d", failing.callCount())
+	if failing.CallCount() != 1 {
+		t.Errorf("expected failing provider to still be attempted once, got %d", failing.CallCount())
 	}
 	snap, err := stack.db.GetSnapshot(ctx, "fake-provider")
 	if err != nil {
@@ -111,7 +112,7 @@ func TestScheduler_UnregisteredFetcherDoesNotStopOtherCollections(t *testing.T) 
 		t.Fatalf("set credentials: %v", err)
 	}
 	// Deliberately register no Fetcher for no-creds-provider.
-	succeeding := newTestFetcher(provider.Metadata{
+	succeeding := providertest.NewFetcher(provider.Metadata{
 		ID: "fake-provider",
 		CredentialFields: []provider.CredentialField{
 			{Name: "api_key", Label: "API Key", Secret: true},
@@ -141,7 +142,7 @@ func TestScheduler_RunTicksAndCollectsUntilContextCancelled(t *testing.T) {
 	if _, err := stack.providers.SetEnabled(context.Background(), "no-creds-provider", true); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
-	f := newTestFetcher(provider.Metadata{ID: "no-creds-provider"}, []provider.UsageMetric{
+	f := providertest.NewFetcher(provider.Metadata{ID: "no-creds-provider"}, []provider.UsageMetric{
 		{Name: "requests", Window: "day", Unit: "count", Used: 1},
 	})
 	stack.providers.RegisterFetcher(f)
@@ -155,7 +156,7 @@ func TestScheduler_RunTicksAndCollectsUntilContextCancelled(t *testing.T) {
 		close(done)
 	}()
 
-	waitFor(t, 2*time.Second, func() bool { return f.callCount() >= 2 })
+	waitFor(t, 2*time.Second, func() bool { return f.CallCount() >= 2 })
 
 	cancel()
 

@@ -5,38 +5,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"sync"
 	"testing"
 
 	"github.com/danstis/ai-usage-dashboard/internal/credential"
 	"github.com/danstis/ai-usage-dashboard/internal/provider"
+	"github.com/danstis/ai-usage-dashboard/internal/providertest"
 	"github.com/danstis/ai-usage-dashboard/internal/scheduler"
 	"github.com/danstis/ai-usage-dashboard/internal/store/sqlite"
 )
-
-// refreshTestFetcher is a minimal, deterministic provider.Fetcher test
-// double for exercising the refresh HTTP endpoint end to end.
-type refreshTestFetcher struct {
-	meta    provider.Metadata
-	mu      sync.Mutex
-	metrics []provider.UsageMetric
-	err     error
-	calls   int
-}
-
-func (f *refreshTestFetcher) Metadata() provider.Metadata { return f.meta }
-
-func (f *refreshTestFetcher) FetchUsage(_ context.Context, _ map[string]string) ([]provider.UsageMetric, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.calls++
-	if f.err != nil {
-		return nil, f.err
-	}
-	out := make([]provider.UsageMetric, len(f.metrics))
-	copy(out, f.metrics)
-	return out, nil
-}
 
 // refreshTestRegistry declares credential fields so the disabled/
 // uncredentialed conflict paths have something to exercise.
@@ -102,18 +78,18 @@ func TestRefresh_FullAcceptanceLoop(t *testing.T) {
 	handler, providerSvc, _ := newRefreshTestHandler(t)
 
 	limit := int64(500)
-	fetcher := &refreshTestFetcher{
-		meta: provider.Metadata{
+	fetcher := providertest.NewFetcher(
+		provider.Metadata{
 			ID:   "openai",
 			Name: "OpenAI",
 			CredentialFields: []provider.CredentialField{
 				{Name: "api_key", Label: "API Key", Secret: true},
 			},
 		},
-		metrics: []provider.UsageMetric{
+		[]provider.UsageMetric{
 			{Name: "monthly_spend", Window: "month", Unit: "usd_cents", Used: 300, Limit: &limit},
 		},
-	}
+	)
 	providerSvc.RegisterFetcher(fetcher)
 
 	putRec := putCredentials(t, handler, "openai", `{"values":{"api_key":"sk-test"}}`)
@@ -145,8 +121,8 @@ func TestRefresh_FullAcceptanceLoop(t *testing.T) {
 		t.Fatalf("expected Limit 500 to round-trip, got %+v", usage.Metrics[0].Limit)
 	}
 
-	if fetcher.calls != 1 {
-		t.Fatalf("expected Fetcher to be called exactly once, got %d", fetcher.calls)
+	if fetcher.CallCount() != 1 {
+		t.Fatalf("expected Fetcher to be called exactly once, got %d", fetcher.CallCount())
 	}
 }
 
@@ -199,7 +175,8 @@ func TestRefresh_FetcherErrorIs500(t *testing.T) {
 	if _, err := providerSvc.SetEnabled(context.Background(), "anthropic", true); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
-	fetcher := &refreshTestFetcher{meta: provider.Metadata{ID: "anthropic"}, err: context.DeadlineExceeded}
+	fetcher := providertest.NewFetcher(provider.Metadata{ID: "anthropic"}, nil)
+	fetcher.SetError(context.DeadlineExceeded)
 	providerSvc.RegisterFetcher(fetcher)
 
 	rec := refreshUsage(t, handler, "anthropic")

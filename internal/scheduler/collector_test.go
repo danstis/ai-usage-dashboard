@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/danstis/ai-usage-dashboard/internal/provider"
+	"github.com/danstis/ai-usage-dashboard/internal/providertest"
 	"github.com/danstis/ai-usage-dashboard/internal/store"
 )
 
@@ -75,8 +76,8 @@ func TestCollector_PropagatesFetcherError(t *testing.T) {
 		t.Fatalf("enable: %v", err)
 	}
 	upstream := errors.New("upstream down")
-	f := newTestFetcher(provider.Metadata{ID: "no-creds-provider"}, nil)
-	f.err = upstream
+	f := providertest.NewFetcher(provider.Metadata{ID: "no-creds-provider"}, nil)
+	f.SetError(upstream)
 	stack.providers.RegisterFetcher(f)
 
 	c := NewCollector(stack.providers, stack.credentials, stack.db)
@@ -107,7 +108,7 @@ func TestCollector_FullAcceptanceLoop(t *testing.T) {
 	want := []provider.UsageMetric{
 		{Name: "monthly_spend", Window: "month", Unit: "usd_cents", Used: 250, Limit: &limit},
 	}
-	fetcher := newTestFetcher(meta, want)
+	fetcher := providertest.NewFetcher(meta, want)
 	stack.providers.RegisterFetcher(fetcher)
 
 	if err := stack.credentials.SetValues(ctx, "fake-provider", map[string]string{"api_key": "sk-test-123"}); err != nil {
@@ -124,11 +125,11 @@ func TestCollector_FullAcceptanceLoop(t *testing.T) {
 		t.Fatalf("Collect() returned error: %v", err)
 	}
 
-	if fetcher.callCount() != 1 {
-		t.Fatalf("expected Fetcher to be called once, got %d", fetcher.callCount())
+	if fetcher.CallCount() != 1 {
+		t.Fatalf("expected Fetcher to be called once, got %d", fetcher.CallCount())
 	}
-	if fetcher.creds["api_key"] != "sk-test-123" {
-		t.Fatalf("expected Fetcher to receive decrypted credentials, got %+v", fetcher.creds)
+	if fetcher.LastCreds()["api_key"] != "sk-test-123" {
+		t.Fatalf("expected Fetcher to receive decrypted credentials, got %+v", fetcher.LastCreds())
 	}
 
 	if len(snap.Metrics) != 1 || snap.Metrics[0].Name != "monthly_spend" || snap.Metrics[0].Used != 250 {
@@ -156,7 +157,7 @@ func TestCollector_ProviderWithNoCredentialFieldsNeedsNoCredentials(t *testing.T
 	if _, err := stack.providers.SetEnabled(ctx, "no-creds-provider", true); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
-	f := newTestFetcher(provider.Metadata{ID: "no-creds-provider"}, []provider.UsageMetric{
+	f := providertest.NewFetcher(provider.Metadata{ID: "no-creds-provider"}, []provider.UsageMetric{
 		{Name: "requests", Window: "day", Unit: "count", Used: 1},
 	})
 	stack.providers.RegisterFetcher(f)
@@ -166,8 +167,8 @@ func TestCollector_ProviderWithNoCredentialFieldsNeedsNoCredentials(t *testing.T
 	if err != nil {
 		t.Fatalf("Collect() returned error: %v", err)
 	}
-	if len(f.creds) != 0 {
-		t.Fatalf("expected empty credential map for a provider with no declared fields, got %+v", f.creds)
+	if len(f.LastCreds()) != 0 {
+		t.Fatalf("expected empty credential map for a provider with no declared fields, got %+v", f.LastCreds())
 	}
 	if len(snap.Metrics) != 1 || snap.Metrics[0].Used != 1 {
 		t.Fatalf("unexpected snapshot metrics: %+v", snap.Metrics)
@@ -182,7 +183,7 @@ func TestCollector_SecondCollectReplacesSnapshot(t *testing.T) {
 	if _, err := stack.providers.SetEnabled(ctx, "no-creds-provider", true); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
-	f := newTestFetcher(provider.Metadata{ID: "no-creds-provider"}, []provider.UsageMetric{
+	f := providertest.NewFetcher(provider.Metadata{ID: "no-creds-provider"}, []provider.UsageMetric{
 		{Name: "requests", Window: "day", Unit: "count", Used: 1},
 	})
 	stack.providers.RegisterFetcher(f)
@@ -192,9 +193,7 @@ func TestCollector_SecondCollectReplacesSnapshot(t *testing.T) {
 		t.Fatalf("first Collect() returned error: %v", err)
 	}
 
-	f.mu.Lock()
-	f.metrics = []provider.UsageMetric{{Name: "requests", Window: "day", Unit: "count", Used: 2}}
-	f.mu.Unlock()
+	f.SetMetrics([]provider.UsageMetric{{Name: "requests", Window: "day", Unit: "count", Used: 2}})
 
 	snap, err := c.Collect(ctx, "no-creds-provider")
 	if err != nil {
