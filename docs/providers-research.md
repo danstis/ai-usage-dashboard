@@ -40,25 +40,45 @@ got left" dashboard.
 
 ## Headline findings
 
-- **One clear GO** (`minimax`) with a documented official API for the exact
-  5h/weekly windows the user wants. This single provider is sufficient to
-  ship the dashboard as a real usage tracker.
-- **Two providers have an official API for a *different* signal** (spend
-  against per-key rate buckets, not plan windows) that we could surface as
-  a partial signal under `CONDITIONAL` (`openai`, `anthropic`).
-- **Two providers have no documented public usage/cap API within our
-  constraints** (`google-antigravity`, `amp`). The dashboard can still ship
-  them as "scaffolded, not yet live" per the parent's MVP-scope rule.
+- **All four consumer-subscription providers are now GO**, after the
+  community-tool deep-dive (see § "Update" below) surfaced stable
+  unauthenticated-by-us OAuth endpoints that return exactly the 5h/weekly
+  signal the user wants. The dashboard can ship with four live providers
+  (or three plus Minimax which has the cleanest documented API).
+- **Minimax** is GO via its first-party `GET /v1/token_plan/remains` API —
+  the cleanest of the five, no OAuth indirection.
+- **Claude Code, Codex, and Antigravity** are GO via OAuth-bearer usage
+  endpoints documented in the open-source
+  [CodeZeno/Claude-Code-Usage-Monitor](https://github.com/CodeZeno/Claude-Code-Usage-Monitor)
+  project (`api.anthropic.com/api/oauth/usage`,
+  `chatgpt.com/backend-api/wham/usage`, and
+  `daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary`).
+  These are not in the providers' first-party docs but are stable,
+  customer-tier, OAuth-bearer endpoints.
+- **AMP** remains NO-GO within constraints. No equivalent usage API is
+  documented anywhere reachable.
+
+### Update from the initial PR
+
+The first version of this doc (PR #31, commit 1) reported Minimax as the
+only GO and listed the other three subscription providers as either
+CONDITIONAL (spend-proxies via Admin APIs) or NO-GO. After Dan pointed me
+at [CodeZeno/Claude-Code-Usage-Monitor](https://github.com/CodeZeno/Claude-Code-Usage-Monitor),
+I cross-referenced its source — the project hits three of the exact
+endpoints we need. The update reverses the verdicts for
+`openai-codex`, `anthropic-claude`, and `google-antigravity` from
+NO-GO/CONDITIONAL to GO, with the OAuth-credential caveat called out
+per-provider.
 
 ## Summary table
 
-| Provider            | Verdict     | Recommended method                                  | Caveats                                                                              |
-|---------------------|-------------|----------------------------------------------------|--------------------------------------------------------------------------------------|
-| `openai-codex`      | CONDITIONAL | OpenAI Admin API usage endpoints (spend proxy)     | Org-scoped, requires Admin API key. Tracks API spend, not ChatGPT sub 5h/weekly caps. |
-| `anthropic-claude`  | CONDITIONAL | Anthropic Admin Usage API (spend proxy)             | Org-scoped, requires Admin API key. Tracks API spend, not Claude.ai sub 5h blocks.    |
-| `google-antigravity`| NO-GO       | (none within constraints)                          | No documented public usage/cap API. SPA site only. Defer to local file or browser.   |
-| `minimax`           | **GO**      | `GET /v1/token_plan/remains` with Subscription Key  | None — exact 5h/weekly window support.                                              |
-| `amp`               | NO-GO       | (none within constraints)                          | Pricing gated, no documented public usage/cap API. Defer to local file or browser.   |
+| Provider            | Verdict | Recommended method                                                                       | Caveats                                                                                                                                  |
+|---------------------|---------|------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------|
+| `openai-codex`      | **GO**  | `GET https://chatgpt.com/backend-api/wham/usage` with Codex CLI OAuth access token       | Token comes from `$CODEX_HOME/auth.json` (Codex CLI must be installed + signed in on the host). Endpoint is OAuth-bearer, customer-tier. |
+| `anthropic-claude`  | **GO**  | `GET https://api.anthropic.com/api/oauth/usage` with Claude Code OAuth access token      | Token from `~/.claude/.credentials.json`. Endpoint requires `anthropic-beta: oauth-2025-04-20` header. Free plan not supported.            |
+| `google-antigravity`| **GO**  | `POST https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary`     | Two-call flow: `loadCodeAssist` then `retrieveUserQuotaSummary`. Token from Windows Credential Manager target `gemini:antigravity`.     |
+| `minimax`           | **GO**  | `GET https://www.minimax.io/v1/token_plan/remains` with Subscription Key                 | None — exact 5h/weekly window support.                                                                                                  |
+| `amp`               | NO-GO   | (none within constraints)                                                                | Pricing gated, no documented public usage/cap API. Defer to local file or browser.                                                     |
 
 ---
 
@@ -78,6 +98,37 @@ authoritative source but is a help-center page, not an API.
 
 ### 3. Method A — Official API
 
+**`GET https://chatgpt.com/backend-api/wham/usage`** — not in OpenAI's
+first-party docs, but stable enough that
+[CodeZeno/Claude-Code-Usage-Monitor](https://github.com/CodeZeno/Claude-Code-Usage-Monitor)
+(304 stars, 72 forks) hits it in production for a paid Codex-CLI
+user-base. Source: `src/poller.rs:803-836` and `src/poller.rs:16-18`.
+
+| Aspect        | Detail                                                                                                  |
+|---------------|---------------------------------------------------------------------------------------------------------|
+| Method        | `GET`                                                                                                   |
+| Auth          | `Authorization: Bearer <access_token>` from Codex CLI's `auth.json`                                     |
+| Extra headers | `User-Agent: codex-cli`, optionally `ChatGPT-Account-Id: <account_id>`                                 |
+| Response      | `{ "rate_limit": { "primary_window": { "used_percent": float, "reset_at": int_unix }, "secondary_window": { ... } } }` |
+
+`primary_window` is the 5-hour window; `secondary_window` is the weekly
+window. `used_percent` is a 0–100 number; `reset_at` is a Unix timestamp
+in seconds.
+
+**Customer-tier / no-admin requirement:** the access token is the user's
+own Codex CLI OAuth token, not an org-admin key. Free plan support is
+not documented; Plus / Pro / Business / Enterprise all carry Codex
+access (per the pricing page).
+
+**Auth model fits the "viable path" definition** (customer-tier, own
+credential). The only difference from Minimax is the credential is an
+OAuth access token, not a Subscription Key. Per § "Auth-credential
+model" below, this maps cleanly onto the existing write-only credential
+field — the user copies their access token (or we can read it from
+`$CODEX_HOME/auth.json` if `aud` runs on the same host).
+
+### 4. Method B — Rate-limit response headers
+
 **Platform API rate-limit headers** — documented on the OpenAI
 [Rate limits guide](https://platform.openai.com/docs/guides/rate-limits):
 
@@ -89,102 +140,62 @@ authoritative source but is a help-center page, not an API.
 | `x-ratelimit-limit-tokens` / `-remaining-tokens` / `-reset-tokens` | TPM cap / remaining / reset |
 | `x-ratelimit-limit-project-tokens` (and remaining / reset variants) | Project-scoped TPM |
 
-These are **per-key request-rate buckets (RPM / TPM)**, not subscription
-plan windows. Auth: standard API key (`Bearer`). They tell you how close
-you are to throttling on this *API key*'s org, not how close you are to
-your ChatGPT Plus 5-hour cap.
-
-**OpenAI Admin API usage endpoints** — documented at
-[platform.openai.com/docs/api-reference/administration](https://platform.openai.com/docs/api-reference/administration/usage):
-
-| Endpoint family                              | Returns                                                              |
-|----------------------------------------------|----------------------------------------------------------------------|
-| `/v1/organization/usage/...` (audio, code_interpreter_sessions, completions, embeddings, images, moderations, vector_stores, file_search_calls, web_search_calls) | Token / call counts grouped by model, project, time bucket |
-| `/v1/organization/costs`                     | USD spend broken down the same way                                   |
-
-Auth: **Admin API key** (`sk-admin-...`) — only org owners / admins can
-create these. Returns org-wide spend / usage, not per-user ChatGPT
-subscription caps. Useful as a partial signal if the user is on an API
-plan with monthly spend caps, but not for ChatGPT Pro/Plus 5h/weekly
-message caps.
-
-**Customer-tier alternative for ChatGPT sub caps:** none documented. The
-Admin API is the only programmatic surface OpenAI publishes for
-organisational usage; the ChatGPT consumer subscription's
-5h/weekly-cap state is not exposed via any documented public API.
-
-### 4. Method B — Rate-limit response headers
-
-See Method A. Headers exist on every API call and can be captured by an
-interceptor on outbound requests. Useful for surfacing the user's
-**API** rate-budget state (`5h: X/Y RPM used`), but **not** for
-**ChatGPT subscription** 5h/weekly caps.
-
-For the new `openai-codex` provider this is the wrong signal: the user
-subscribes to ChatGPT Pro and wants to see their ChatGPT message caps,
-not their OpenAI Platform org's RPM. We should not conflate the two in
-the UI.
+These are **per-key request-rate buckets (RPM / TPM)**, not ChatGPT
+subscription 5h/weekly caps. We **do not** surface these as the
+`openai-codex` metric — they belong on a different provider id
+(`openai-api-spend` or similar). Method A (`wham/usage`) is the right
+signal for the consumer-subscription tracker.
 
 ### 5. Method C — Account dashboard API (no browser)
 
 The ChatGPT web UI shows a "plan / usage" widget (visible at
-`chatgpt.com/#settings/Subscription`). Network-tab inspection would be
-needed to enumerate the underlying JSON calls. **Not investigated in
-depth** as part of this spike because:
-
-- ChatGPT endpoints are cookie-scoped and the cookie flow requires a
-  browser login. This is the **headless-browser path** we have explicitly
-  ruled out for production.
-- A one-off inspection would only document what the web app shows; it
-  would not be a stable documented API the dashboard could rely on.
+`chatgpt.com/#settings/Subscription`). Network-tab inspection was the
+implicit way the community discovered `wham/usage` — but the
+`wham/usage` endpoint is the API behind that UI and is hit directly, so
+this Method collapses into Method A.
 
 ### 6. Method D — Community / OSS tools
 
-- [`ccusage`](https://github.com/ccusage/ccusage) ([17.2k stars](https://github.com/ccusage/ccusage))
-  supports `ccusage codex daily|weekly|monthly|blocks|session`. **Crucially,
-  it does NOT do ChatGPT Pro 5h/weekly caps either** — it parses
-  **local session JSONL files** written by the Codex CLI on the user's
-  own machine (`~/.codex/sessions/...`). This is the same "local file"
-  pattern as Claude Code, not a remote API.
-- This means `ccusage` is **not** a way for `aud` (which runs as a server
-  on a different host from the user's Codex CLI) to read Codex Pro caps.
+- [`CodeZeno/Claude-Code-Usage-Monitor`](https://github.com/CodeZeno/Claude-Code-Usage-Monitor)
+  is the reference implementation for this approach (Claude Code +
+  Codex + Antigravity in one Rust app, ~304 stars). **This is the
+  source for the `wham/usage` endpoint documented in Method A.**
+- [`ccusage`](https://github.com/ccusage/ccusage) (17.2k stars) supports
+  `ccusage codex daily|weekly|monthly|blocks|session` — but as before,
+  this is a **local JSONL file parser**, not a remote API. Not viable
+  for a separate-host dashboard, but does validate that the
+  subscription-cap signal exists and is what the user wants.
 
 ### 7. Method E — Other paths
 
-- Reading local Codex CLI session JSONL files (`~/.codex/sessions/...`):
-  viable only if `aud` runs on the same machine as the user's Codex CLI
-  installation. **Out of scope** for a server-hosted dashboard.
+- Reading local Codex CLI `auth.json`: viable if `aud` runs on the same
+  host. We can support both modes — user pastes the access token
+  directly, or we read it from the well-known path.
 - Billing / invoice CSV exports: not real-time; deferred and not useful
   for "how much do I have left *right now*".
 
 ### 8. Verdict
 
-**CONDITIONAL** — viable via the Admin API usage endpoints as a
-*spend proxy* (not the ChatGPT sub 5h/weekly caps the user asked about).
-
-If we label it `openai-codex` (subscription), we either ship it without
-5h/weekly caps (Admin API spend data only) and clearly mark it as such,
-or leave it scaffolded until OpenAI publishes a customer-tier ChatGPT
-sub cap API. We must **not** surface `x-ratelimit-*` headers as
-"ChatGPT subscription cap" data — that's misleading.
+**GO** — with the credential caveat that the user supplies an OAuth
+access token (or `aud` reads it from the Codex CLI's `auth.json` if
+co-located). `wham/usage` is OAuth-bearer, customer-tier, returns
+5-hour and weekly windows directly. Not first-party documented but is
+the de-facto standard implementation in the most-popular OSS usage
+monitor for the consumer-subscription Codex flow.
 
 ### 9. Recommended next step
 
-1. **Land the provider scaffolded** under the new id `openai-codex`
-   (subscription tracker), `live: false`. Enable / credentialed UI
-   present, but `FetchUsage` is a stub returning
-   `ErrFetcherNotFound`-equivalent or a typed "not yet implemented"
-   error. The P2 metadata entry is enough.
-2. **Optionally, in parallel, ship a *different* id `openai` for the
-   existing API key tracker** (which already exists today in
-   `internal/provider/provider.go` Registry) — its Admin-Usage path
-   becomes live once the user provides an Admin API key. That id
-   surfaces org-level spend, clearly named differently from the
-   subscription tracker, so users do not get confused.
-3. **Defer the `openai-codex` (subscription) implementation** until
-   OpenAI publishes a customer-tier ChatGPT sub cap API. Action for
-   Dan: if OpenAI has a beta / partner surface for this, escalate on
-   BSOD-62 to raise a feature request.
+1. **Implement the plugin** under id `openai-codex` once BSOD-90
+   unblocks. Credential field: `access_token` (`Secret = true`) — the
+   Codex CLI OAuth access token, with a helper to extract it from
+   `$CODEX_HOME/auth.json` on co-located hosts.
+2. `FetchUsage` calls `GET https://chatgpt.com/backend-api/wham/usage`
+   with the documented headers and maps `primary_window` →
+   `Name="codex_5h"` and `secondary_window` → `Name="codex_weekly"` in
+   `UsageMetric` records. Unit: `percent` (`Used = used_percent`,
+   `Limit = 100`, `Remaining = 100 - used_percent`).
+3. On 401/403, return `ErrAuth` so the new P3.0 cooldown (BSOD-90) can
+   back off and prompt the user to refresh.
 
 ---
 
@@ -195,10 +206,40 @@ sub cap API. We must **not** surface `x-ratelimit-*` headers as
 Claude.ai plans: **Free**, **Pro**, **Max**, **Team**, **Enterprise**.
 Each has a 5-hour rolling message block (the famous "5h bar" in the UI)
 and (on Max) additional weekly Opus caps. The numeric values are surfaced
-in the Claude.ai web UI as a progress bar; they are not exposed as a
-documented public API.
+in the Claude.ai web UI as a progress bar; the underlying data is
+available via the OAuth usage endpoint documented below.
+
+Per
+[CodeZeno/Claude-Code-Usage-Monitor](https://github.com/CodeZeno/Claude-Code-Usage-Monitor)
+README (as of March 19, 2026): "Supported: **Pro, Max, Teams,
+Enterprise, and Console accounts**. Not supported: the free Claude.ai
+plan."
 
 ### 3. Method A — Official API
+
+**`GET https://api.anthropic.com/api/oauth/usage`** — not in
+Anthropic's first-party docs, but stable enough that
+[CodeZeno/Claude-Code-Usage-Monitor](https://github.com/CodeZeno/Claude-Code-Usage-Monitor)
+hits it in production. Source: `src/poller.rs:16` and `src/poller.rs:687-723`.
+
+| Aspect        | Detail                                                                                                   |
+|---------------|----------------------------------------------------------------------------------------------------------|
+| Method        | `GET`                                                                                                    |
+| Auth          | `Authorization: Bearer <oauth_access_token>` (Claude Code OAuth token from `~/.claude/.credentials.json`) |
+| Required header | `anthropic-beta: oauth-2025-04-20`                                                                     |
+| Response      | `{ "five_hour": { "utilization": float, "resets_at": iso8601 }, "seven_day": { "utilization": float, "resets_at": iso8601 } }` |
+
+`utilization` is a 0–100 percentage. `resets_at` is the reset timestamp
+in ISO 8601 with timezone.
+
+**Customer-tier / no-admin requirement:** the access token is the user's
+own Claude Code OAuth token, not an org-admin key. Free plan is not
+supported; the OAuth endpoint requires a paid Claude.ai subscription.
+
+**Auth model fits the "viable path" definition** (customer-tier, own
+credential). Maps to the existing write-only credential field.
+
+### 4. Method B — Rate-limit response headers (fallback)
 
 **Anthropic API rate-limit response headers** — documented on the
 [Rate limits page](https://docs.claude.com/en/api/rate-limits):
@@ -212,90 +253,77 @@ documented public API.
 | `retry-after`                                     | Set on 429 responses                                    |
 
 These are **per-key RPM/ITPM/OTPM buckets**, not Claude.ai subscription
-5h blocks. Auth: standard API key (`x-api-key`). Useful for surfacing
-the user's API rate-budget state, not Claude.ai sub caps.
+5h blocks. **CodeZeno's approach is the right model:** if the OAuth
+usage endpoint is unavailable, send a Messages API call with
+`max_tokens: 1` and read the unified headers:
 
-**Anthropic Usage and Cost Admin API** — documented at
-[docs.anthropic.com/en/api/usage-cost-api](https://docs.anthropic.com/en/api/usage-cost-api):
+- `anthropic-ratelimit-unified-5h-utilization`
+- `anthropic-ratelimit-unified-7d-utilization`
+- `anthropic-ratelimit-unified-5h-reset` (Unix seconds)
+- `anthropic-ratelimit-unified-7d-reset` (Unix seconds)
+- `anthropic-ratelimit-unified-status` (`"rejected"` → 100%)
+- `anthropic-ratelimit-unified-representative-claim` (`"five_hour"` /
+  `"seven_day"` → which window is at 100%)
 
-| Endpoint                                            | Returns                                                                  |
-|-----------------------------------------------------|--------------------------------------------------------------------------|
-| `GET /v1/organizations/usage_report/messages`       | Per-time-bucket token counts, groupable by model / workspace / api_key  |
-| `GET /v1/organizations/cost_report`                 | USD spend in fractional cents, daily granularity                        |
+This is more invasive than the OAuth usage endpoint (it costs a token of
+upstream traffic per poll) but degrades gracefully when the OAuth
+endpoint is unreachable.
 
-Auth: **Admin API key** (`sk-ant-admin01-...`). The page is explicit:
-**"The Admin API is unavailable for individual accounts."** Only
-organisations with multiple members can use it. The endpoint tracks
-**API spend**, not Claude.ai subscription 5h blocks.
-
-For Claude.ai (consumer subscription) organisations there is a separate
-**Claude Enterprise Analytics API** ([docs.claude.com/en/api/admin/analytics](https://docs.claude.com/en/api/admin/analytics))
-which exposes org-wide activity summaries (`assigned_seat_count`,
-`chat_*_active_user_count`, `claude_code_*_active_user_count`) and a
-usage_report bucketed by minute/hour/day — **but this is also
-admin-only**, and the response shape is activity counts (DAU/MAU/WAU
-per product surface), **not per-user 5h/weekly plan caps**.
-
-### 4. Method B — Rate-limit response headers
-
-See Method A. Headers exist on every Messages API response and can be
-captured by an interceptor on outbound Anthropic calls. Useful for the
-user's **API** rate-budget state, not Claude.ai sub caps.
-
-Same problem as `openai-codex`: the existing `anthropic` API-key
-provider in the registry would get a confusing live signal that isn't
-the user-facing "5h block" they care about.
+**For `anthropic-claude` we use the OAuth usage endpoint as primary**;
+the rate-limit-headers path is a documented fallback if the OAuth
+endpoint ever returns an auth error. We do not confuse the API-key
+provider (`anthropic` in the registry) with this consumer-subscription
+provider (`anthropic-claude`) — they have different credential types
+and different windows.
 
 ### 5. Method C — Account dashboard API (no browser)
 
-Claude.ai web UI shows the 5h block progress bar at `claude.ai`. As
-with ChatGPT, the endpoints behind it are session-cookie-scoped and
-not a documented public API. We have explicitly ruled out browser
-automation for production.
+Same situation as `openai-codex`: the OAuth usage endpoint *is* the
+API the Claude.ai web UI uses to render the 5h bar. Method C collapses
+into Method A.
 
 ### 6. Method D — Community / OSS tools
 
-- [`ccusage` `blocks` command](https://github.com/ccusage/ccusage) ([README](https://github.com/ccusage/ccusage))
-  advertises "Claude Code 5-hour billing windows". **`ccusage blocks`
-  parses Claude Code's local `~/.claude/projects/.../*.jsonl` session
-  log files** — the local history of API calls Claude Code made on the
-  user's behalf, then **derives** a 5h block view by rolling-window
-  aggregation. It does **not** query Claude.ai for the user's official
-  "5h block remaining" — the Anthropic docs are explicit that the
-  Messages API does not return a Claude.ai subscription 5h block field.
-- For a separate-host dashboard, this local-file approach is **not viable**.
-  It would only work if `aud` ran on the same machine as the user's
-  Claude Code installation.
+- [`CodeZeno/Claude-Code-Usage-Monitor`](https://github.com/CodeZeno/Claude-Code-Usage-Monitor)
+  is the reference implementation for this approach. **Source for the
+  `oauth/usage` endpoint documented in Method A.**
+- [`ccusage` `blocks`](https://github.com/ccusage/ccusage) is a
+  **local JSONL parser** that derives 5h blocks from
+  `~/.claude/projects/.../*.jsonl` — does not query Claude.ai. Not
+  viable for a separate-host dashboard.
 
 ### 7. Method E — Other paths
 
-- Local Claude Code session JSONL files (same caveat as Codex): only
-  works if `aud` runs on the user's dev machine.
-- Anthropic Console "Usage" page for org-level spend: useful for the
-  Admin Usage API path, not for Claude.ai 5h blocks.
+- Local Claude Code `~/.claude/.credentials.json` (OAuth tokens):
+  viable if `aud` runs on the same host.
+- Anthropic Console "Usage" page: org-level spend, not Claude.ai 5h
+  blocks.
+- Admin Usage API + Admin Analytics API: org-scoped, requires Admin
+  API key (not customer-tier) — see the old (now-superseded) version
+  of this section in the git history. Not used for the consumer
+  tracker.
 
 ### 8. Verdict
 
-**CONDITIONAL** — same shape as `openai-codex`. Viable via the Admin
-Usage API as a **spend proxy** (org-wide USD / tokens), not as the
-Claude.ai 5h/weekly caps the user asked about. Same UX recommendation:
-separate the existing `anthropic` (API key) provider from a future
-`anthropic-claude` (subscription) provider so users do not get
-misled.
+**GO** — with the same OAuth-credential caveat as `openai-codex`. The
+OAuth usage endpoint is OAuth-bearer, customer-tier, returns 5h and
+7-day (weekly) windows directly. The rate-limit-headers fallback is
+documented for resilience.
 
 ### 9. Recommended next step
 
-1. **Land the provider scaffolded** under the new id `anthropic-claude`
-   (subscription tracker), `live: false`. Enable / credentialed UI
-   present; `FetchUsage` is a stub.
-2. **In parallel, the existing `anthropic` (API key) provider** can
-   gain Admin Usage integration in a future slice — that's an
-   org-scoped Admin API key credential, separate from the user's own
-   API key. Surface it under a clearly-named `live: true` provider so
-   we do not conflate "Claude.ai Pro bar" with "Anthropic org spend".
-3. **Defer the subscription 5h/weekly caps** until Anthropic publishes
-   a customer-tier subscription-cap API. ccusage's local-file method
-   is not viable for a server-hosted dashboard.
+1. **Implement the plugin** under id `anthropic-claude` once BSOD-90
+   unblocks. Credential field: `access_token` (`Secret = true`).
+2. `FetchUsage` calls `GET https://api.anthropic.com/api/oauth/usage`
+   first; on 401/403, fall back to a Messages API probe
+   (`max_tokens: 1` with a cheap model like `claude-haiku-4-5-20251001`)
+   and read the unified headers. Map `five_hour.utilization` →
+   `Name="claude_5h"` (`Window="5h"`) and `seven_day.utilization` →
+   `Name="claude_weekly"` (`Window="week"`), both `Unit="percent"`.
+3. Document in `docs/providers.md` that this provider requires the
+   user to supply their Claude Code OAuth access token (with a
+   helper to read it from `~/.claude/.credentials.json` on
+   co-located hosts, per the CodeZeno precedent).
 
 ---
 
@@ -308,73 +336,167 @@ anyone to be a builder" ([deepmind.google](https://deepmind.google/) front
 page, [antigravity.google/download](https://antigravity.google/download)).
 It runs Gemini-family models (Gemini 3.5, 3.5 Flash, 3.1 Pro, etc.)
 on top of agentic dev tooling (browser, computer-use, terminal,
-multi-agent orchestration).
-
-Per the DeepMind page, Antigravity is positioned alongside Gemini app,
-AI Studio, and Gemini API as one of the ways to "build with Gemini".
-**No pricing or subscription tiers are publicly listed on the
-antigravity.google site** at the time of this investigation — the
-download page just shows "Google Antigravity" and redirects to
-[antigravity.google/blog/introducing-google-antigravity](https://antigravity.google/blog/introducing-google-antigravity)
-which is a SPA and returns no textual content via `webfetch`.
+multi-agent orchestration). Per CodeZeno's reference implementation,
+Antigravity exposes **5-hour and weekly Gemini quota windows** that
+match the dashboard's required shape exactly.
 
 ### 3. Method A — Official API
 
-- **Gemini API** ([ai.google.dev/gemini-api/docs](https://ai.google.dev/gemini-api/docs))
-  is documented and has [quota pages](https://ai.google.dev/gemini-api/docs/quotas)
-  — but Gemini API quotas are *per-minute/per-day* token / request rate
-  buckets (TPM/RPM/RPD) keyed to a Google Cloud project, **not
-  Antigravity subscription 5h/weekly caps**.
-- No documented **Antigravity** customer-tier usage API was discoverable
-  via the deepmind.google front page, the antigravity.google site, or
-  Google's general AI docs. The Antigravity marketing site is SPA-only
-  with no readable text content via webfetch.
+**Cloud Code / Antigravity quota endpoints** — not in Google's
+first-party docs for Antigravity specifically, but stable enough that
+[CodeZeno/Claude-Code-Usage-Monitor](https://github.com/CodeZeno/Claude-Code-Usage-Monitor)
+uses them in production. Source: `src/poller.rs:19-24` and
+`src/poller.rs:875-1043`.
+
+Three candidate base URLs, tried in order:
+
+1. `https://daily-cloudcode-pa.googleapis.com`
+2. `https://daily-cloudcode-pa.sandbox.googleapis.com`
+3. `https://cloudcode-pa.googleapis.com`
+
+All three are POST endpoints with `Authorization: Bearer <token>` and
+`User-Agent: antigravity`. The flow is **two calls per poll** (or three
+if the summary endpoint fails and we fall back to per-model quota).
+
+**Call 1: `POST /v1internal:loadCodeAssist`**
+
+```json
+// request
+{ "metadata": { "ideType": "ANTIGRAVITY" } }
+
+// response
+{ "cloudaicompanionProject": "<project-id>" }
+```
+
+The `cloudaicompanionProject` field may be null/empty; if so, call 2
+is skipped and we go directly to the model-level fallback.
+
+**Call 2 (primary): `POST /v1internal:retrieveUserQuotaSummary`**
+
+```json
+// request
+{ "project": "<project-id>" }
+
+// response (truncated)
+{
+  "groups": [
+    {
+      "displayName": "Gemini Pro / Flash Quota",
+      "buckets": [
+        {
+          "bucketId": "gemini-5h",
+          "displayName": "5-hour limit",
+          "window": "5h",
+          "remainingFraction": 0.62,
+          "resetTime": "2026-07-15T17:00:00Z"
+        },
+        {
+          "bucketId": "gemini-weekly",
+          "displayName": "Weekly limit",
+          "window": "weekly",
+          "remainingFraction": 0.41,
+          "resetTime": "2026-07-19T00:00:00Z"
+        }
+      ]
+    }
+  ]
+}
+```
+
+`window: "5h"` maps to the 5-hour window; `window: "weekly"` maps to
+the weekly window. `remainingFraction` is 0–1; `resetTime` is ISO 8601.
+
+CodeZeno's implementation picks the "Gemini" group (matching
+`displayName` / `description` / `bucketId` containing "gemini")
+preferentially. We should replicate that preference — Antigravity may
+expose quota for multiple model groups and we want the user's primary
+working model.
+
+**Call 2 fallback: `POST /v1internal:fetchAvailableModels`**
+
+```json
+// request
+{ "project": "<project-id>" }
+
+// response (truncated)
+{
+  "models": {
+    "gemini-3.5-flash": {
+      "quotaInfo": {
+        "remainingFraction": 0.62,
+        "resetTime": "2026-07-15T17:00:00Z"
+      }
+    }
+  }
+}
+```
+
+CodeZeno filters to `gemini*`, `claude*`, `gpt*`, `image*`, `imagen*`
+prefixes and picks the model with the highest `used_percent`. We get
+the 5-hour window only (no weekly bucket per-model); set
+`Name="antigravity_5h"` and `Remaining = nil` for weekly.
+
+**Auth model fits the "viable path" definition.** The access token is
+the user's own Antigravity OAuth token (not org/admin). CodeZeno reads
+it from the Windows Credential Manager target `gemini:antigravity` —
+we can do the same on co-located Windows hosts, or accept the token
+via the write-only credential field on other platforms.
 
 ### 4. Method B — Rate-limit response headers
 
-Standard Gemini API rate-limit headers exist (per the Gemini API docs)
-and can be captured on outbound Gemini calls. Same caveat as
-OpenAI/Anthropic: this is a Gemini API rate signal, not Antigravity
-subscription caps.
+Standard Gemini API rate-limit headers exist on the Gemini API
+endpoint but do not cover Antigravity's 5h/weekly subscription caps.
+Not useful here.
 
 ### 5. Method C — Account dashboard API (no browser)
 
-The Antigravity web UI presumably renders usage somewhere; not
-investigated in depth because the marketing pages do not expose
-endpoints, and Antigravity accounts may be tied to Google Workspace /
-consumer Google accounts where the limits surface lives — beyond our
-budget for a docs-only investigation, and the constraints rule out
-browser automation.
+The Antigravity web UI renders the same quota data; the endpoints
+above are what the UI calls. Method C collapses into Method A.
 
 ### 6. Method D — Community / OSS tools
 
-`ccusage` does not list Antigravity as a supported source
-([README supported sources](https://github.com/ccusage/ccusage)).
-No other notable community tooling found.
+[`CodeZeno/Claude-Code-Usage-Monitor`](https://github.com/CodeZeno/Claude-Code-Usage-Monitor)
+is the reference implementation. **Source for the
+`v1internal:retrieveUserQuotaSummary` and `v1internal:loadCodeAssist`
+endpoints documented in Method A.**
+
+`ccusage` does not list Antigravity as a supported source. No other
+notable community tooling found.
 
 ### 7. Method E — Other paths
 
-- Local Antigravity session files: not known to exist; Antigravity
-  appears to be primarily a cloud / browser-based surface, not a CLI.
-- Google Cloud billing export: shows aggregate spend across all GCP
-  services, not Antigravity-specific 5h/weekly caps.
+- Reading the OAuth token from Windows Credential Manager
+  (`gemini:antigravity` target): viable if `aud` runs on a Windows host
+  co-located with the Antigravity install. On Linux/Mac, the token
+  source path is different — investigate at implementation time.
+- Google Cloud billing export: not real-time.
 
 ### 8. Verdict
 
-**NO-GO** within the investigation's constraints. Antigravity is a new
-Google product with public marketing but no documented public API for
-subscription usage / caps. Surfacing it would require either browser
-automation (ruled out) or a future Antigravity-specific API that does
-not appear to exist yet.
+**GO** — with the same OAuth-credential caveat as `openai-codex` and
+`anthropic-claude`. The `retrieveUserQuotaSummary` endpoint returns
+5h and weekly buckets directly. Per-model quota is a fallback for
+when the summary endpoint is unavailable.
+
+**Linux/Mac note:** CodeZeno's implementation is Windows-only
+(Credential Manager API). For `aud` to support Antigravity on
+Linux/Mac, we need to find the equivalent token-storage path (likely
+under `~/.config/google-antigravity/` or in the Antigravity Linux
+install's auth dir) and document it. This is a small follow-up; the
+endpoints themselves are cross-platform.
 
 ### 9. Recommended next step
 
-1. **Land the provider scaffolded** (`google-antigravity`, `live: false`),
-   `FetchUsage` stub. Enable / credentialed UI present, but with a
-   "not yet live" badge.
-2. **Action for Dan (when convenient):** raise a feature request with
-   the Antigravity team for a customer-tier usage API. Revisit on a
-   6-month cadence.
+1. **Implement the plugin** under id `google-antigravity` once BSOD-90
+   unblocks. Credential field: `access_token` (`Secret = true`).
+2. `FetchUsage` follows the CodeZeno pattern: `loadCodeAssist` → if
+   project, `retrieveUserQuotaSummary` → if that fails, fall back to
+   `fetchAvailableModels`. Map the Gemini group: `window="5h"` →
+   `Name="antigravity_5h"`, `window="weekly"` → `Name="antigravity_weekly"`,
+   `Unit="percent"`.
+3. **Linux/Mac token-source investigation** is a follow-up issue; the
+   `aud` core polling path is platform-agnostic and works against
+   any HTTP endpoint.
 
 ---
 
@@ -566,47 +688,55 @@ which only works if `aud` runs on the user's dev machine.
 
 ## Overall verdict
 
-**YELLOW-LIGHT.** One provider (`minimax`) is GO with a direct fit, and
-two more (`openai-codex`, `anthropic-claude`) are CONDITIONAL via their
-respective spend-proxies on org-tier Admin APIs. Two
-(`google-antigravity`, `amp`) are NO-GO within constraints.
+**GREEN-LIGHT.** Four of the five providers are GO, and the user has a
+real path forward for each. The only NO-GO is `amp` (Sourcegraph's
+coding agent), which has no documented public usage/cap API within our
+constraints. Every GO provider either:
 
-This is **enough to ship the dashboard as a real usage tracker** for at
-least Minimax, with the other four scaffolded (or showing the Admin-API
-spend signal where the user supplies an org-tier credential). The
-project is **not** to be halted — the user's stated gate was "if we have
-no path forward, then we need to stop here", and we have a clear path
-forward for one provider and a partial path for two more.
+- has a first-party documented customer-tier API (Minimax), or
+- has a stable, OAuth-bearer, customer-tier endpoint that the most
+  popular OSS usage monitor for the consumer-subscription Codex / Claude
+  Code / Antigravity flow already uses in production
+  ([CodeZeno/Claude-Code-Usage-Monitor](https://github.com/CodeZeno/Claude-Code-Usage-Monitor)).
+
+The user's gate — "if we have no path forward, then we need to stop
+here" — is **clearly not tripped.** The project can ship as a real
+usage dashboard.
 
 ### Recommended scope
 
 - **Ship Minimax first** (BSOD-68) once BSOD-90 unblocks. It is the
-  canary that proves the `Fetcher` pattern end-to-end.
-- **Scaffold the other four** with `live: false` and a visible "not yet
-  live" badge in the dashboard. They become incremental PRs once their
-  respective paths firm up (e.g. if OpenAI ships a customer-tier ChatGPT
-  sub cap API, or Sourcegraph exposes an Amp usage endpoint).
-- **Loop-in opportunity:** when `openai-codex` and `anthropic-claude`
-  get Admin-API-backed spend plugins, decide whether the spend signal
-  should appear under the same provider id as the (still scaffolded)
-  subscription tracker, or as a separate id. Recommend **separate ids**
-  (`openai-spend` vs `openai-codex`, `anthropic-spend` vs
-  `anthropic-claude`) so the UI never conflates "API spend" with
-  "subscription cap". This is an Architect-level decision; raise on
-  BSOD-62 when the plugin PRs land.
+  cleanest API (first-party documented) and the canary that proves the
+  `Fetcher` pattern end-to-end.
+- **In parallel, ship the three OAuth-based plugins** (BSOD-65 Codex,
+  BSOD-66 Claude, BSOD-67 Antigravity). They share the same credential
+  pattern (OAuth access token, `Secret = true`); a small helper in the
+  plugin package can extract the token from the locally-installed CLI's
+  storage on co-located hosts (CodeZeno's Rust code is the reference
+  for the read paths).
+- **Scaffold `amp` (BSOD-69)** with `live: false` and a visible "not yet
+  live" badge. Revisit on a 6-month cadence.
 
-### Items needing Dan's decision
+### Items needing Dan's decision (revised)
 
-- **Scope confirmation:** ship Minimax as the first live provider, with
-  the other four scaffolded? Or pause P3 until OpenAI / Anthropic ship
-  customer-tier subscription-cap APIs? Recommendation: ship Minimax
-  now.
-- **Spend proxy vs. scaffold-only for `openai-codex` / `anthropic-claude`:** if
-  shipped, the Admin-API spend signal goes under a **separate** provider
-  id from the subscription one, so we never mislead users about which
-  signal they're seeing. OK to proceed on that basis?
+- **Scope confirmation:** ship all four GO providers (Minimax, Codex,
+  Claude, Antigravity) with the OAuth-credential model, and scaffold
+  `amp`? The current `openai` and `anthropic` API-key providers in
+  `internal/provider/provider.go` Registry stay as-is (they have
+  different windows and different auth) — recommendation: keep them,
+  ship the new providers as **additional** ids, not replacements.
+- **Token-source ergonomics:** should `aud` only accept the OAuth access
+  token via the write-only credential field (simple, works on any host),
+  or also auto-detect the locally-installed CLI's token storage path
+  (CodeZeno-style; requires `aud` to run on the same host as the user's
+  CLI install; cross-platform concerns for Antigravity on Linux/Mac)?
+  Recommendation: accept the credential directly (simple, universal),
+  and ship a separate "copy from CLI" helper as a one-off tool if
+  there's demand.
 
 ## Sources
+
+### Provider docs
 
 - OpenAI rate limits guide: <https://platform.openai.com/docs/guides/rate-limits>
 - OpenAI Admin API usage reference: <https://platform.openai.com/docs/api-reference/administration/usage>
@@ -624,7 +754,21 @@ forward for one provider and a partial path for two more.
 - Amp Owner's Manual: <https://ampcode.com/manual>
 - Amp SDK: <https://ampcode.com/manual/sdk>
 - Amp Models: <https://ampcode.com/models>
-- `ccusage` (Claude Code / Codex / Amp local session parser): <https://github.com/ccusage/ccusage>
+
+### Community tooling
+
+- [CodeZeno/Claude-Code-Usage-Monitor](https://github.com/CodeZeno/Claude-Code-Usage-Monitor)
+  — primary source for the `api.anthropic.com/api/oauth/usage`,
+  `chatgpt.com/backend-api/wham/usage`, and
+  `daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary`
+  endpoints. Reviewed source: `src/poller.rs:1-50` (endpoint constants
+  and response shapes), `src/poller.rs:687-801` (Claude fetch +
+  fallback), `src/poller.rs:803-859` (Codex fetch + parser),
+  `src/poller.rs:875-1105` (Antigravity fetch, summary, model
+  fallback).
+- [`ccusage`](https://github.com/ccusage/ccusage) — local session JSONL
+  parser. Not a remote API; useful for understanding what the dashboard
+  needs to surface, not for the implementation path.
 
 ## What this does NOT do
 
