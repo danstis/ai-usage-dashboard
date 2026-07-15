@@ -14,10 +14,10 @@ import (
 	"github.com/danstis/ai-usage-dashboard/internal/store"
 )
 
-// AuthCooldown lets Service clear a provider's scheduler auth-failure
+// CooldownClearer lets Service clear a provider's scheduler auth-failure
 // backoff after a successful credential set, without importing the
 // scheduler package. Satisfied by *scheduler.AuthCooldownRegistry.
-type AuthCooldown interface {
+type CooldownClearer interface {
 	Clear(providerID string)
 }
 
@@ -27,7 +27,7 @@ type AuthCooldown interface {
 type Service struct {
 	repo      store.CredentialRepository
 	masterKey []byte
-	cooldown  AuthCooldown
+	cooldown  CooldownClearer
 }
 
 // NewService builds a Service backed by repo, sealing/opening values with
@@ -35,7 +35,7 @@ type Service struct {
 // config.masterKey is already validated to this length at boot. cooldown is
 // optional (nil-safe) — pass nil in tests or callers that don't wire the
 // scheduler's auth-failure backoff.
-func NewService(repo store.CredentialRepository, masterKey []byte, cooldown AuthCooldown) *Service {
+func NewService(repo store.CredentialRepository, masterKey []byte, cooldown CooldownClearer) *Service {
 	return &Service{repo: repo, masterKey: masterKey, cooldown: cooldown}
 }
 
