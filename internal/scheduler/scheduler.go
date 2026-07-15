@@ -10,14 +10,6 @@ import (
 	"github.com/danstis/ai-usage-dashboard/internal/provider"
 )
 
-// CooldownClearer lets other packages (internal/credential) clear a provider's
-// auth-failure backoff window without importing the scheduler's internal
-// registry type. A successful credential set calls Clear so the very next
-// tick retries immediately instead of waiting out the remaining window.
-type CooldownClearer interface {
-	Clear(providerID string)
-}
-
 // cooldownEntry tracks one provider's consecutive-auth-failure count and the
 // time its cooldown window expires.
 type cooldownEntry struct {
@@ -72,8 +64,8 @@ func (r *AuthCooldownRegistry) recordFailure(providerID string) {
 }
 
 // Clear removes providerID's cooldown entry entirely, satisfying
-// CooldownClearer so a successful credential set (internal/credential) can
-// immediately un-gate the next tick.
+// credential.CooldownClearer so a successful credential set
+// (internal/credential) can immediately un-gate the next tick.
 func (r *AuthCooldownRegistry) Clear(providerID string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

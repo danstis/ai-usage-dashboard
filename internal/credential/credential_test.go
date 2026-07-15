@@ -48,7 +48,7 @@ func (f *fakeRepository) Delete(_ context.Context, providerID string) error {
 	return nil
 }
 
-// fakeCooldown is an in-memory credential.AuthCooldown test double that
+// fakeCooldown is an in-memory credential.CooldownClearer test double that
 // records which provider ids Clear was called for.
 type fakeCooldown struct {
 	cleared []string
@@ -178,7 +178,7 @@ func TestService_SetValues_NilCooldownIsSafe(t *testing.T) {
 	svc := NewService(repo, validKey(), nil)
 
 	if err := svc.SetValues(ctx, "openai", map[string]string{"api_key": "v"}); err != nil {
-		t.Fatalf("SetValues() with nil AuthCooldown returned error: %v", err)
+		t.Fatalf("SetValues() with nil CooldownClearer returned error: %v", err)
 	}
 }
 
