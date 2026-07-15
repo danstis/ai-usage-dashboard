@@ -734,6 +734,177 @@ usage dashboard.
   and ship a separate "copy from CLI" helper as a one-off tool if
   there's demand.
 
+## Token access from a container
+
+The followup research question was: can `aud` (which today ships as a
+distroless static container, `gcr.io/distroless/static:nonroot` per the
+`Dockerfile`) read the OAuth tokens written by Codex CLI / Claude Code
+/ Antigravity when the dashboard runs in a container on the same host
+as those CLIs?
+
+### `aud`'s default container user
+
+`Dockerfile:11-12` — the published image runs as `nonroot:nonroot`
+(uid/gid 65532, the distroless default). `/data` is pre-owned by
+nonroot. No `ARG`-driven uid switch is wired today. This matters for
+bind-mounting host credential files: the host user's `~/.claude` and
+`~/.codex` are typically owned by uid 1000 (or whatever the host user's
+uid is), not 65532.
+
+### Token storage paths (cross-platform)
+
+| Provider        | macOS / Linux                                    | Windows                                                  |
+|-----------------|--------------------------------------------------|----------------------------------------------------------|
+| Codex CLI       | `$CODEX_HOME/auth.json` (default `~/.codex/`)     | `%USERPROFILE%\.codex\auth.json`                          |
+| Claude Code     | `~/.claude/.credentials.json`                    | `%USERPROFILE%\.claude\.credentials.json`                 |
+| Antigravity     | **TBD** (Google product, macOS install location not yet documented; CodeZeno is Windows-only) | Windows Credential Manager target `gemini:antigravity` (JSON `{"token": {"access_token": "..."}}`) |
+
+References:
+- Codex CLI storage: [Advanced Configuration § "Config and state locations"](https://developers.openai.com/codex/config-advanced) — `CODEX_HOME` defaults to `~/.codex`; `auth.json` is the file-based credential storage (alternatively the OS keychain/keyring on some installs).
+- Claude Code storage: per [CodeZeno source](https://github.com/CodeZeno/Claude-Code-Usage-Monitor) `src/poller.rs:599-604, 1335-1350` — `~/.claude/.credentials.json`, field `claudeAiOauth.accessToken`. Cross-platform per the [Claude Code install docs](https://code.claude.com/docs/en/overview) (macOS, Linux, Windows, WSL).
+- Codex CLI cross-platform: native installer script for macOS/Linux, Homebrew, WinGet, npm — all available.
+- Antigravity on macOS/Linux: not documented in any reachable Google page. CodeZeno's reference is Windows-only. The Antigravity install path on macOS/Linux is a known follow-up (see below).
+
+### Three viable access patterns, in order of complexity
+
+#### A. User supplies the access token directly (recommended for v1)
+
+The user runs their CLI once on the host, copies the access token out
+of the credential file (or runs a one-liner we provide, e.g. `cat
+~/.claude/.credentials.json | jq -r .claudeAiOauth.accessToken` for
+Claude Code), and pastes it into the dashboard's write-only credential
+field. **`aud` makes the API call using the pasted token.**
+
+**Pros:** works in any deployment — bare metal, Docker, Kubernetes,
+serverless. No filesystem coupling. Matches the existing
+`CredentialField{Secret = true}` model exactly.
+
+**Cons:** access tokens typically expire after ~1 hour. The user has to
+re-paste (or use a helper) frequently. This is a real UX cliff. The
+existing P3.0 auth-cooldown (BSOD-90) handles 401/403 by gating the
+backoff, but does not auto-refresh.
+
+#### B. Bind-mount the host CLI directory into the container (v2)
+
+The user bind-mounts the host's `~/.claude` and/or `~/.codex` into
+`/mnt/host-home/.claude` and `/mnt/host-home/.codex` inside the
+container. `aud`'s plugin reads from those paths, picks up the same
+files the CLI writes (including automatic refreshes from the CLI
+itself), and uses the live access token on every poll.
+
+**Pros:** automatic token refresh (the CLIs update the files in-place on
+OAuth refresh). No user-paste loop.
+
+**Cons:** requires the host cred files to be world-readable OR a
+`user:` override in compose to match the host uid:
+
+```yaml
+# docker-compose.yml
+services:
+  aud:
+    image: ghcr.io/danstis/ai-usage-dashboard:latest
+    user: "1000:1000"   # match the host user; our Dockerfile's nonroot is overridden
+    volumes:
+      - ~/.claude:/mnt/host-home/.claude:ro
+      - ~/.codex:/mnt/host-home/.codex:ro
+      - aud-data:/data
+```
+
+Or chmod on the host (less safe): `chmod a+r ~/.claude/.credentials.json
+~/.codex/auth.json`. The compose `user:` override is the cleaner option
+and matches the way the same pattern is handled for the existing SQLite
+volume in `README.md`.
+
+**Linux/Mac note:** Codex CLI is available on macOS/Linux (Homebrew,
+npm, native installer); Claude Code is available on macOS/Linux
+(native installer, Homebrew, apt/dnf/apk). Both work with the bind-mount
+approach on macOS and Linux hosts.
+
+**Windows note:** the equivalent pattern on Windows is a bind mount
+from `C:\Users\<you>\.claude` (Docker Desktop's path translation
+handles this), but this is a less common deployment shape. Most Windows
+users will run `aud` as a native process or as a Windows container.
+
+#### C. Host-side `aud-cli` helper (v3 if needed)
+
+A small auxiliary binary the user runs on the host (no container
+coupling). The helper watches the CLI credential files (or reads them
+on a timer) and POSTs the access token to `aud`'s credential API
+(`PUT /api/v1/providers/{id}/credentials`). `aud` then uses the
+pushed-in token as in approach A, but the user does not paste.
+
+**Pros:** cleanest separation. Works with no filesystem coupling in the
+container; works for Windows Credential Manager (the helper reads
+that directly via Win32 API on Windows hosts). Can be a simple `go
+install` or `brew install` target.
+
+**Cons:** another moving part; needs its own lifecycle / install docs.
+
+#### D. Antigravity on Windows + Linux container: out of scope
+
+Antigravity's OAuth token on Windows lives in **Windows Credential
+Manager** (target `gemini:antigravity`), not on the filesystem. A
+Linux container cannot read the Windows host's credential store
+directly. For this combination the user must:
+
+- run `aud` as a Windows container (and even then, the credential
+  manager access is non-trivial), or
+- run `aud` as a native Windows process, or
+- use approach A (paste the token manually), or
+- use approach C (`aud-cli` running on the Windows host, reading the
+  credential manager and pushing the token to the dashboard).
+
+The `aud-cli` approach is the most natural fit for Windows + Antigravity.
+This is a follow-up issue, not a blocker for the Minimax-first ship.
+
+### Recommended v1 / v2 / v3 layering
+
+| Phase | Pattern used       | UX                                                                  | Hosts supported                                                                                                                |
+|-------|--------------------|--------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|
+| v1    | A only             | Paste the access token into the dashboard                          | Any (bare metal, Docker, K8s, serverless)                                                                                     |
+| v2    | A + B              | Paste once, OR bind-mount for auto-refresh                          | Any host with Codex CLI / Claude Code installed (macOS, Linux, Windows with Docker Desktop)                                  |
+| v3    | A + B + C          | Add `aud-cli` helper for users who can't bind-mount, and Antigravity-on-Windows | Same as v2, plus Windows hosts running Antigravity where the credential store is non-filesystem                       |
+
+### Why the Minimax plugin is the right "ship first" choice
+
+The Minimax Token Plan plugin's credential is a **Subscription Key** that
+the user pastes into the dashboard — **not** an OAuth access token from
+a CLI. There is no filesystem coupling, no token-expiry loop, no
+container permission issue, no platform-conditional code path. It's
+identical UX to the existing `openai` and `anthropic` API-key plugins.
+The "container can read these tokens" question is moot for Minimax.
+
+This is why Dan's call to ship Minimax first is the right one: the
+Minimax plugin exercises the end-to-end `Fetcher` flow with the simplest
+possible credential model, and the OAuth-bearer plugins (Codex / Claude
+Code / Antigravity) can land behind it with their container-access
+caveats called out in the dashboard UI.
+
+### Follow-up issues to open (not blockers for the Minimax-first ship)
+
+1. **Linux/Mac Antigravity token-storage path** — needs investigation.
+   CodeZeno is Windows-only. Action: read the Antigravity app's
+   install layout under `~/Library/Application Support/Antigravity/`
+   (macOS) and `~/.config/antigravity/` (Linux) when a Linux install is
+   available; document the path and the JSON shape.
+2. **`aud-cli` helper design** — if v2 demand is high, ship a small
+   `cmd/aud-cli` (or external tool) that POSTs refreshed tokens to
+   `PUT /api/v1/providers/{id}/credentials`. Adds a one-line install
+   per platform (`brew install aud-cli`, `apt install aud-cli`, etc.)
+   and resolves the Windows + Antigravity case.
+3. **Codex CLI keychain path** — Codex's docs mention "auth.json (if
+   you use file-based credential storage) or your OS keychain/keyring".
+   When Codex uses the OS keychain (macOS Keychain, GNOME Keyring,
+   Windows Credential Manager), the access token is not in
+   `auth.json` and the bind-mount approach does not work. Need a
+   `security find-generic-password -s "Codex CLI"` (macOS) /
+   `secret-tool lookup` (Linux) helper in v3.
+4. **Refresh-token flow** — currently `aud` only consumes the access
+   token. None of the three OAuth usage endpoints are documented to
+   accept a refresh token, so we likely have to consume the access
+   token from the CLI's local store. v3 could add a `client_credentials`
+   refresh exchange if the providers document it.
+
 ## Sources
 
 ### Provider docs
