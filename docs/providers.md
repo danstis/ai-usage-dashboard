@@ -21,12 +21,90 @@ provider id as the join key:
 | Runtime `Fetcher` registry | `internal/provider/fetcher.go`        | Built fresh in `NewService`.      | `Fetcher` implementations keyed by metadata id, used by the future scheduler / on-demand refresh. |
 
 A provider id present in `Registry` but with no registered `Fetcher` is
-**not pollable**: the future scheduler (P2/S5) skips it, and the future
-`POST /api/v1/providers/{id}/refresh` endpoint returns `409 conflict` with
-code `conflict` (see [the **Error responses** section in
+**not pollable**: the scheduler (P2/S5) skips it, and
+`POST /api/v1/providers/{id}/refresh` returns `409 conflict` with code
+`conflict` (see [the **Error responses** section in
 `README.md`](../README.md#error-responses)). This split exists deliberately
 so a metadata-only entry is observable as "not pollable" rather than as a
 silent missing-method error.
+
+## Live vs. scaffolded
+
+**"Live" iff a `Fetcher` is registered for the id — that single condition
+drives both the API and the boot sequence.** There is no separate flag to
+keep in sync:
+
+- `Service.HasFetcher(id)` (`internal/provider/fetcher.go`) is the single
+  source of truth.
+- The `Provider.live` API field (`internal/provider/provider.go`,
+  `internal/api/provider_adapter.go`) is `HasFetcher(id)` at the moment
+  `List`/`Get` is called. It is independent of `enabled` and of credential
+  state, and it is **not a health signal** — a live provider with a bad or
+  missing credential is still `live: true`; it just fails to collect.
+- The scheduler's register-at-boot step (below) is the only thing that
+  makes an id live in the first place.
+
+A provider ships in one of two states along this axis:
+
+| State      | Registry entry | Registered `Fetcher` | `Provider.live` | Pollable |
+| ---------- | --------------- | --------------------- | ---------------- | -------- |
+| Scaffolded | yes             | no                    | `false`           | no — `ErrFetcherNotFound` / `409 conflict` |
+| Live       | yes             | yes                   | `true`            | yes |
+
+## Plugin package convention
+
+In-tree provider plugins live under `internal/plugins/<provider>/` (e.g.
+`internal/plugins/openai/`) — **not** the top-level [`/plugins`](../plugins/README.md)
+directory, which is reserved for the future externally-compiled binaries
+described in [`docs/plugins.md`](plugins.md). Each in-tree plugin package
+exports a single constructor:
+
+```go
+// internal/plugins/openai/openai.go
+package openai
+
+func New() provider.Fetcher { /* ... */ }
+```
+
+`New()` returns a value satisfying the `Fetcher` interface below; the
+package owns its own HTTP client, response parsing, and error wrapping
+(including wrapping auth failures in `provider.ErrAuth` — see
+[Auth-failure backoff](#auth-failure-backoff)) but exposes nothing else
+publicly.
+
+## Register-at-boot pattern
+
+`cmd/aud/main.go` calls `providerSvc.RegisterFetcher(<pkg>.New())` once per
+live provider, immediately after `provider.NewService(...)` /
+`Reconcile(...)` and before the scheduler starts:
+
+```go
+providerSvc := provider.NewService(db, provider.Registry)
+if err := providerSvc.Reconcile(ctx); err != nil { /* fail boot */ }
+
+providerSvc.RegisterFetcher(openai.New())
+providerSvc.RegisterFetcher(anthropic.New())
+
+// ... credential service, collector, scheduler.New — see below.
+```
+
+A scaffolded provider (metadata in `Registry` with no plugin package yet, or
+a plugin package that exists but hasn't wired in a real implementation) adds
+no registration line at all — there is nothing to opt out of.
+
+## Auth-failure backoff
+
+A live `Fetcher` **must** wrap `provider.ErrAuth` (via
+`fmt.Errorf("...: %w", provider.ErrAuth)`) when the upstream rejects
+credentials as invalid (HTTP 401/403 or the provider's equivalent). The
+scheduler (`internal/scheduler.Scheduler`) detects this via `errors.Is` and
+engages a per-provider cooldown so a bad key isn't retried every tick; any
+other error keeps the existing per-tick retry behavior. A successful
+`internal/credential.Service.SetValues` call clears the cooldown for that
+provider immediately. `POST /providers/{id}/refresh` is never gated by this
+cooldown — see `internal/scheduler.AuthCooldownRegistry` for the
+implementation and `internal/scheduler/scheduler_test.go` for the covered
+scenarios.
 
 ## `Fetcher` interface
 
@@ -132,3 +210,36 @@ optionals, error propagation, metric-copy isolation), runtime registry
 propagation), and a guard that the metadata `Registry` still carries
 `CredentialFields` for every entry (the P1 API contract stays intact as
 the runtime side is added).
+
+### Testing an in-tree plugin (`internal/plugins/plugintest`)
+
+Each plugin under `internal/plugins/<provider>/` should test its
+`FetchUsage` implementation against `internal/plugins/plugintest.Stack`
+rather than hand-rolling a `provider.Service` / `credential.Service` pair:
+
+```go
+stack := plugintest.NewStack(myMetadata) // in-memory store, provider enabled
+stack.Providers.RegisterFetcher(New())   // the plugin's own Fetcher
+
+creds, err := stack.Reveal(ctx, myMetadata.ID, map[string]string{"api_key": "sk-test"})
+// ... err check
+
+metrics, err := stack.Providers.FetchUsage(ctx, myMetadata.ID, creds)
+```
+
+`Stack.Reveal` seals and reveals credential values through the real
+`credential.Service`, so a test's `creds` map is resolved the same way
+`internal/scheduler.Collector` resolves it at runtime — not hand-assembled.
+Cover at least two shapes per plugin:
+
+1. **Live-mock**: register the plugin's `Fetcher`, resolve credentials, and
+   assert `FetchUsage` returns the expected `[]provider.UsageMetric` (see
+   the `UsageMetric` field contract above — integer units, `nil` for
+   undisclosed `Limit`/`Remaining`/`ResetAt`, never floats).
+2. **Scaffolded / missing-fetcher**: build a `Stack` and call `FetchUsage`
+   *before* registering a `Fetcher`, asserting `errors.Is(err,
+   provider.ErrFetcherNotFound)` — this is the state the plugin ships in
+   before it's wired into `cmd/aud/main.go`.
+
+See `internal/plugins/plugintest/harness_test.go` for both shapes exercised
+against the harness itself.

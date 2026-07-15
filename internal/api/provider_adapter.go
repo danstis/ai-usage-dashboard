@@ -63,6 +63,7 @@ func toAPIProvider(p provider.Provider) Provider {
 		Id:               p.ID,
 		Name:             p.Name,
 		Enabled:          p.Enabled,
+		Live:             p.Live,
 		CredentialFields: fields,
 	}
 }

@@ -78,6 +78,50 @@ var fakeRegistry = []Metadata{
 	{ID: "fake-provider-2", Name: "Fake Provider 2"},
 }
 
+func TestProvider_LiveIsPopulated(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeRepo()
+	if _, err := repo.Create(context.Background(), "fake-provider", true); err != nil {
+		t.Fatalf("seed Create() returned error: %v", err)
+	}
+	if _, err := repo.Create(context.Background(), "fake-provider-2", false); err != nil {
+		t.Fatalf("seed Create() returned error: %v", err)
+	}
+	svc := NewService(repo, fakeRegistry)
+	svc.RegisterFetcher(newFakeFetcher(fakeRegistry[0], nil))
+
+	providers, err := svc.List(context.Background())
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if len(providers) != 2 {
+		t.Fatalf("expected 2 providers, got %d: %+v", len(providers), providers)
+	}
+	if providers[0].ID != "fake-provider" || !providers[0].Live {
+		t.Errorf("expected fake-provider Live=true (registered Fetcher), got %+v", providers[0])
+	}
+	if providers[1].ID != "fake-provider-2" || providers[1].Live {
+		t.Errorf("expected fake-provider-2 Live=false (scaffolded, no Fetcher), got %+v", providers[1])
+	}
+
+	got, err := svc.Get(context.Background(), "fake-provider")
+	if err != nil {
+		t.Fatalf("Get() returned error: %v", err)
+	}
+	if !got.Live {
+		t.Errorf("expected Get(fake-provider).Live = true, got %+v", got)
+	}
+
+	scaffolded, err := svc.Get(context.Background(), "fake-provider-2")
+	if err != nil {
+		t.Fatalf("Get() returned error: %v", err)
+	}
+	if scaffolded.Live {
+		t.Errorf("expected Get(fake-provider-2).Live = false, got %+v", scaffolded)
+	}
+}
+
 func TestService_List_MergesRegistryWithPersistedState(t *testing.T) {
 	t.Parallel()
 

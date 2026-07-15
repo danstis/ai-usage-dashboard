@@ -94,6 +94,9 @@ type Provider struct {
 	// Id Stable provider identifier.
 	Id string `json:"id"`
 
+	// Live Whether a Fetcher is registered for this provider id — i.e. whether it can actually be polled/refreshed, as opposed to a scaffolded metadata-only entry. Independent of `enabled` and of credential state; this is not a health signal.
+	Live bool `json:"live"`
+
 	// Name Human-readable provider name.
 	Name string `json:"name"`
 }

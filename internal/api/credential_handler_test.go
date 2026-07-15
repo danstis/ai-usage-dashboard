@@ -49,7 +49,7 @@ func newCredentialTestHandler(t *testing.T) http.Handler {
 	}
 
 	key := make([]byte, 32)
-	credentialSvc := credential.NewService(db, key)
+	credentialSvc := credential.NewService(db, key, nil)
 
 	return NewHandler(NewProviderRepository(providerSvc), NewCredentialRepository(providerSvc, credentialSvc), NewUsageGetter(providerSvc, db), stubUsageRefresher{})
 }

@@ -48,6 +48,16 @@ func (f *fakeRepository) Delete(_ context.Context, providerID string) error {
 	return nil
 }
 
+// fakeCooldown is an in-memory credential.CooldownClearer test double that
+// records which provider ids Clear was called for.
+type fakeCooldown struct {
+	cleared []string
+}
+
+func (f *fakeCooldown) Clear(providerID string) {
+	f.cleared = append(f.cleared, providerID)
+}
+
 func validKey() []byte {
 	key := make([]byte, 32)
 	for i := range key {
@@ -59,7 +69,7 @@ func validKey() []byte {
 func TestService_SetValuesThenReveal_RoundTrips(t *testing.T) {
 	ctx := context.Background()
 	repo := newFakeRepository()
-	svc := NewService(repo, validKey())
+	svc := NewService(repo, validKey(), nil)
 
 	if err := svc.SetValues(ctx, "openai", map[string]string{"api_key": "sk-super-secret"}); err != nil {
 		t.Fatalf("SetValues() returned error: %v", err)
@@ -77,7 +87,7 @@ func TestService_SetValuesThenReveal_RoundTrips(t *testing.T) {
 func TestService_SetValues_StoredCiphertextNeverContainsPlaintext(t *testing.T) {
 	ctx := context.Background()
 	repo := newFakeRepository()
-	svc := NewService(repo, validKey())
+	svc := NewService(repo, validKey(), nil)
 
 	plaintext := "sk-super-secret-plaintext-value"
 	if err := svc.SetValues(ctx, "openai", map[string]string{"api_key": plaintext}); err != nil {
@@ -96,7 +106,7 @@ func TestService_SetValues_StoredCiphertextNeverContainsPlaintext(t *testing.T) 
 func TestService_SetValues_TwoFieldsAreIndependentlySealed(t *testing.T) {
 	ctx := context.Background()
 	repo := newFakeRepository()
-	svc := NewService(repo, validKey())
+	svc := NewService(repo, validKey(), nil)
 
 	if err := svc.SetValues(ctx, "openai", map[string]string{
 		"api_key": "key-value",
@@ -125,7 +135,7 @@ func TestService_SetValues_TwoFieldsAreIndependentlySealed(t *testing.T) {
 func TestService_Reveal_WrongProviderFailsAADBinding(t *testing.T) {
 	ctx := context.Background()
 	repo := newFakeRepository()
-	svc := NewService(repo, validKey())
+	svc := NewService(repo, validKey(), nil)
 
 	if err := svc.SetValues(ctx, "openai", map[string]string{"api_key": "secret"}); err != nil {
 		t.Fatalf("SetValues() returned error: %v", err)
@@ -147,10 +157,35 @@ func TestService_Reveal_WrongProviderFailsAADBinding(t *testing.T) {
 	}
 }
 
+func TestService_SetValues_ClearsCooldown(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeRepository()
+	cooldown := &fakeCooldown{}
+	svc := NewService(repo, validKey(), cooldown)
+
+	if err := svc.SetValues(ctx, "openai", map[string]string{"api_key": "v"}); err != nil {
+		t.Fatalf("SetValues() returned error: %v", err)
+	}
+
+	if len(cooldown.cleared) != 1 || cooldown.cleared[0] != "openai" {
+		t.Fatalf("expected SetValues to call Clear(%q) exactly once, got %v", "openai", cooldown.cleared)
+	}
+}
+
+func TestService_SetValues_NilCooldownIsSafe(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeRepository()
+	svc := NewService(repo, validKey(), nil)
+
+	if err := svc.SetValues(ctx, "openai", map[string]string{"api_key": "v"}); err != nil {
+		t.Fatalf("SetValues() with nil CooldownClearer returned error: %v", err)
+	}
+}
+
 func TestService_Presence(t *testing.T) {
 	ctx := context.Background()
 	repo := newFakeRepository()
-	svc := NewService(repo, validKey())
+	svc := NewService(repo, validKey(), nil)
 
 	if err := svc.SetValues(ctx, "openai", map[string]string{"api_key": "v"}); err != nil {
 		t.Fatalf("SetValues() returned error: %v", err)
@@ -168,7 +203,7 @@ func TestService_Presence(t *testing.T) {
 func TestService_Delete(t *testing.T) {
 	ctx := context.Background()
 	repo := newFakeRepository()
-	svc := NewService(repo, validKey())
+	svc := NewService(repo, validKey(), nil)
 
 	if err := svc.SetValues(ctx, "openai", map[string]string{"api_key": "v"}); err != nil {
 		t.Fatalf("SetValues() returned error: %v", err)

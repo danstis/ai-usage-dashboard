@@ -216,7 +216,7 @@ components:
           description: Whether the field value must be masked/encrypted at rest.
     Provider:
       type: object
-      required: [id, name, enabled, credentialFields]
+      required: [id, name, enabled, live, credentialFields]
       properties:
         id:
           type: string
@@ -227,6 +227,13 @@ components:
         enabled:
           type: boolean
           description: Whether the provider is currently enabled.
+        live:
+          type: boolean
+          description: >-
+            Whether a Fetcher is registered for this provider id — i.e.
+            whether it can actually be polled/refreshed, as opposed to a
+            scaffolded metadata-only entry. Independent of `enabled` and of
+            credential state; this is not a health signal.
         credentialFields:
           type: array
           description: Credential fields required to configure this provider.
