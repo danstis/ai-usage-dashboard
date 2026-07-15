@@ -60,6 +60,13 @@ var Registry = []Metadata{
 			{Name: "api_key", Label: "API Key", Secret: true},
 		},
 	},
+	{
+		ID:   "minimax",
+		Name: "Minimax",
+		CredentialFields: []CredentialField{
+			{Name: "subscription_key", Label: "Subscription Key", Secret: true},
+		},
+	},
 }
 
 // Service merges a compiled-in provider registry with persisted enabled

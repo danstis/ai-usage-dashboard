@@ -17,6 +17,7 @@ import (
 
 	"github.com/danstis/ai-usage-dashboard/internal/api"
 	"github.com/danstis/ai-usage-dashboard/internal/credential"
+	"github.com/danstis/ai-usage-dashboard/internal/plugins/minimax"
 	"github.com/danstis/ai-usage-dashboard/internal/provider"
 	"github.com/danstis/ai-usage-dashboard/internal/scheduler"
 	"github.com/danstis/ai-usage-dashboard/internal/server"
@@ -107,8 +108,8 @@ func run(ctx context.Context) error {
 	//
 	//   providerSvc.RegisterFetcher(<pkg>.New())
 	//
-	// No provider is live yet in this slice (P3.0); BSOD-65..69 add the
-	// first ones.
+	// BSOD-68 (first live plugin): Minimax Token Plan.
+	providerSvc.RegisterFetcher(minimax.New())
 
 	// authCooldown is instantiated once and shared: the scheduler gates its
 	// tick path on it, and the credential service clears a provider's entry
