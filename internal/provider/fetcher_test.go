@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -312,5 +313,35 @@ func TestService_FetchUsagePropagatesFetcherError(t *testing.T) {
 	_, err := svc.FetchUsage(context.Background(), meta.ID, nil)
 	if !errors.Is(err, upstream) {
 		t.Fatalf("expected upstream error, got %v", err)
+	}
+}
+
+func TestService_HasFetcher(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeRepo()
+	svc := NewService(repo, fakeRegistry)
+
+	registered := fakeRegistry[0]
+	svc.RegisterFetcher(newFakeFetcher(registered, nil))
+
+	if !svc.HasFetcher(registered.ID) {
+		t.Errorf("HasFetcher(%q) = false, want true for a registered id", registered.ID)
+	}
+	scaffolded := fakeRegistry[1]
+	if svc.HasFetcher(scaffolded.ID) {
+		t.Errorf("HasFetcher(%q) = true, want false for a scaffolded id with no Fetcher", scaffolded.ID)
+	}
+	if svc.HasFetcher("does-not-exist") {
+		t.Error("HasFetcher(unknown id) = true, want false")
+	}
+}
+
+func TestErrAuth_IsDetectable(t *testing.T) {
+	t.Parallel()
+
+	wrapped := fmt.Errorf("fetch: %w", ErrAuth)
+	if !errors.Is(wrapped, ErrAuth) {
+		t.Fatalf("expected errors.Is(wrapped, ErrAuth) to be true, got false for %v", wrapped)
 	}
 }

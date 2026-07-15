@@ -44,7 +44,7 @@ func newUsageTestHandler(t *testing.T) (http.Handler, store.Store) {
 	}
 
 	key := make([]byte, 32)
-	credentialSvc := credential.NewService(db, key)
+	credentialSvc := credential.NewService(db, key, nil)
 
 	handler := NewHandler(
 		NewProviderRepository(providerSvc),

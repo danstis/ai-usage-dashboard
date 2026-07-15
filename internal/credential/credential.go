@@ -14,24 +14,37 @@ import (
 	"github.com/danstis/ai-usage-dashboard/internal/store"
 )
 
+// AuthCooldown lets Service clear a provider's scheduler auth-failure
+// backoff after a successful credential set, without importing the
+// scheduler package. Satisfied by *scheduler.AuthCooldownRegistry.
+type AuthCooldown interface {
+	Clear(providerID string)
+}
+
 // Service seals credential values with internal/secret before persisting
 // them via a store.CredentialRepository, and is the only caller of
 // secret.Open in the codebase.
 type Service struct {
 	repo      store.CredentialRepository
 	masterKey []byte
+	cooldown  AuthCooldown
 }
 
 // NewService builds a Service backed by repo, sealing/opening values with
 // masterKey. masterKey must be exactly secret.KeySize bytes —
-// config.masterKey is already validated to this length at boot.
-func NewService(repo store.CredentialRepository, masterKey []byte) *Service {
-	return &Service{repo: repo, masterKey: masterKey}
+// config.masterKey is already validated to this length at boot. cooldown is
+// optional (nil-safe) — pass nil in tests or callers that don't wire the
+// scheduler's auth-failure backoff.
+func NewService(repo store.CredentialRepository, masterKey []byte, cooldown AuthCooldown) *Service {
+	return &Service{repo: repo, masterKey: masterKey, cooldown: cooldown}
 }
 
 // SetValues seals and upserts every field in values for providerID. Each
 // field's ciphertext is bound to (providerID, field) via secret.AAD, so a
-// stored value can never be swapped between fields or providers.
+// stored value can never be swapped between fields or providers. On success
+// it clears providerID's auth-failure cooldown (if one is wired) so the
+// scheduler's next tick retries immediately instead of waiting out the
+// remaining backoff window.
 func (s *Service) SetValues(ctx context.Context, providerID string, values map[string]string) error {
 	for field, value := range values {
 		blob, err := secret.Seal(s.masterKey, []byte(value), secret.AAD(providerID, field))
@@ -41,6 +54,9 @@ func (s *Service) SetValues(ctx context.Context, providerID string, values map[s
 		if err := s.repo.Upsert(ctx, providerID, field, blob); err != nil {
 			return fmt.Errorf("credential: upsert %s/%s: %w", providerID, field, err)
 		}
+	}
+	if s.cooldown != nil {
+		s.cooldown.Clear(providerID)
 	}
 	return nil
 }

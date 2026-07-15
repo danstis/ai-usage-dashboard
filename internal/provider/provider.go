@@ -30,11 +30,16 @@ type Metadata struct {
 	CredentialFields []CredentialField
 }
 
-// Provider is registry Metadata merged with its persisted enabled state —
-// the shape Service returns to callers.
+// Provider is registry Metadata merged with its persisted enabled state and
+// its runtime "live" state — the shape Service returns to callers.
 type Provider struct {
 	Metadata
 	Enabled bool
+	// Live reports whether a Fetcher is registered for this provider id
+	// (Service.HasFetcher). It is independent of Enabled and of credential
+	// state, and is not a health signal — a live provider with bad
+	// credentials is still Live.
+	Live bool
 }
 
 // Registry is the compiled-in, ordered list of providers this build knows
@@ -97,7 +102,7 @@ func (s *Service) List(ctx context.Context) ([]Provider, error) {
 
 	providers := make([]Provider, 0, len(s.registry))
 	for _, m := range s.registry {
-		providers = append(providers, Provider{Metadata: m, Enabled: enabled[m.ID]})
+		providers = append(providers, Provider{Metadata: m, Enabled: enabled[m.ID], Live: s.HasFetcher(m.ID)})
 	}
 	return providers, nil
 }
@@ -114,7 +119,7 @@ func (s *Service) Get(ctx context.Context, id string) (Provider, error) {
 	if err != nil {
 		return Provider{}, err
 	}
-	return Provider{Metadata: m, Enabled: row.Enabled}, nil
+	return Provider{Metadata: m, Enabled: row.Enabled, Live: s.HasFetcher(id)}, nil
 }
 
 // SetEnabled sets the persisted enabled state for id and returns the
@@ -130,7 +135,7 @@ func (s *Service) SetEnabled(ctx context.Context, id string, enabled bool) (Prov
 	if err := s.repo.SetEnabled(ctx, id, enabled); err != nil {
 		return Provider{}, err
 	}
-	return Provider{Metadata: m, Enabled: enabled}, nil
+	return Provider{Metadata: m, Enabled: enabled, Live: s.HasFetcher(id)}, nil
 }
 
 // Reconcile ensures every provider in the registry has a persisted row,

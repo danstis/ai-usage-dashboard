@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -42,7 +43,7 @@ func TestScheduler_TickCollectsOnlyEnabledProviders(t *testing.T) {
 	stack.providers.RegisterFetcher(disabled)
 
 	collector := NewCollector(stack.providers, stack.credentials, stack.db)
-	s := New(stack.providers, collector, time.Hour, time.Second)
+	s := New(stack.providers, collector, time.Hour, time.Second, NewAuthCooldownRegistry(time.Hour, time.Hour))
 
 	s.tick(ctx)
 
@@ -70,7 +71,7 @@ func TestScheduler_FailingProviderDoesNotStopOtherCollections(t *testing.T) {
 	setupTwoProviderScenario(t, stack, failing, succeeding)
 
 	collector := NewCollector(stack.providers, stack.credentials, stack.db)
-	s := New(stack.providers, collector, time.Hour, time.Second)
+	s := New(stack.providers, collector, time.Hour, time.Second, NewAuthCooldownRegistry(time.Hour, time.Hour))
 
 	s.tick(ctx)
 
@@ -101,7 +102,7 @@ func TestScheduler_UnregisteredFetcherDoesNotStopOtherCollections(t *testing.T) 
 	setupTwoProviderScenario(t, stack, nil, succeeding)
 
 	collector := NewCollector(stack.providers, stack.credentials, stack.db)
-	s := New(stack.providers, collector, time.Hour, time.Second)
+	s := New(stack.providers, collector, time.Hour, time.Second, NewAuthCooldownRegistry(time.Hour, time.Hour))
 
 	s.tick(ctx)
 
@@ -128,7 +129,7 @@ func TestScheduler_RunTicksAndCollectsUntilContextCancelled(t *testing.T) {
 	stack.providers.RegisterFetcher(f)
 
 	collector := NewCollector(stack.providers, stack.credentials, stack.db)
-	s := New(stack.providers, collector, 10*time.Millisecond, time.Second)
+	s := New(stack.providers, collector, 10*time.Millisecond, time.Second, NewAuthCooldownRegistry(10*time.Millisecond, time.Hour))
 
 	done := make(chan struct{})
 	go func() {
@@ -147,6 +148,121 @@ func TestScheduler_RunTicksAndCollectsUntilContextCancelled(t *testing.T) {
 	}
 }
 
+func TestScheduler_AuthCooldown_SkipsUntilWindowElapses(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	stack := newTestStack(t)
+	fetcher := setupNoCredsProviderFetcher(t, stack, nil)
+	fetcher.SetError(fmt.Errorf("bad key: %w", provider.ErrAuth))
+
+	cooldown := NewAuthCooldownRegistry(time.Minute, time.Hour)
+	now := time.Now()
+	cooldown.now = func() time.Time { return now }
+
+	collector := NewCollector(stack.providers, stack.credentials, stack.db)
+	s := New(stack.providers, collector, time.Hour, time.Second, cooldown)
+
+	s.tick(ctx)
+	if fetcher.CallCount() != 1 {
+		t.Fatalf("expected the first tick to attempt the upstream call and hit the auth failure, got %d calls", fetcher.CallCount())
+	}
+
+	s.tick(ctx)
+	if fetcher.CallCount() != 1 {
+		t.Fatalf("expected the second tick (still within the cooldown window) to skip the upstream call, got %d calls", fetcher.CallCount())
+	}
+
+	now = now.Add(2 * time.Minute)
+	s.tick(ctx)
+	if fetcher.CallCount() != 2 {
+		t.Fatalf("expected the tick after the cooldown window elapsed to attempt again, got %d calls", fetcher.CallCount())
+	}
+}
+
+func TestScheduler_AuthCooldown_ClearsOnSuccess(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	stack := newTestStack(t)
+	fetcher := setupNoCredsProviderFetcher(t, stack, []provider.UsageMetric{{Name: "requests", Window: "day", Unit: "count", Used: 1}})
+	fetcher.SetError(fmt.Errorf("bad key: %w", provider.ErrAuth))
+
+	cooldown := NewAuthCooldownRegistry(time.Minute, time.Hour)
+	now := time.Now()
+	cooldown.now = func() time.Time { return now }
+
+	collector := NewCollector(stack.providers, stack.credentials, stack.db)
+	s := New(stack.providers, collector, time.Hour, time.Second, cooldown)
+
+	s.tick(ctx)
+	if !cooldown.active("no-creds-provider") {
+		t.Fatal("expected cooldown to be active after an auth failure")
+	}
+
+	now = now.Add(2 * time.Minute)
+	fetcher.SetError(nil)
+	s.tick(ctx)
+
+	if cooldown.active("no-creds-provider") {
+		t.Error("expected a successful collect to clear the cooldown")
+	}
+	cooldown.mu.Lock()
+	_, exists := cooldown.entries["no-creds-provider"]
+	cooldown.mu.Unlock()
+	if exists {
+		t.Error("expected a successful collect to remove the cooldown entry entirely, not just expire it")
+	}
+}
+
+func TestScheduler_AuthCooldown_NonAuthErrorsDoNotCooldown(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	stack := newTestStack(t)
+	fetcher := setupNoCredsProviderFetcher(t, stack, nil)
+	fetcher.SetError(errors.New("upstream 500"))
+
+	cooldown := NewAuthCooldownRegistry(time.Minute, time.Hour)
+	collector := NewCollector(stack.providers, stack.credentials, stack.db)
+	s := New(stack.providers, collector, time.Hour, time.Second, cooldown)
+
+	s.tick(ctx)
+	s.tick(ctx)
+
+	if cooldown.active("no-creds-provider") {
+		t.Error("expected a non-auth error to leave the cooldown entry absent")
+	}
+	if fetcher.CallCount() != 2 {
+		t.Errorf("expected both ticks to attempt the upstream call (no cooldown gating on non-auth errors), got %d", fetcher.CallCount())
+	}
+}
+
+func TestCollector_RefreshBypassesCooldown(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	stack := newTestStack(t)
+	fetcher := setupNoCredsProviderFetcher(t, stack, []provider.UsageMetric{{Name: "requests", Window: "day", Unit: "count", Used: 1}})
+
+	cooldown := NewAuthCooldownRegistry(time.Hour, time.Hour)
+	cooldown.recordFailure("no-creds-provider")
+	if !cooldown.active("no-creds-provider") {
+		t.Fatal("expected cooldown to be active")
+	}
+
+	// The on-demand refresh endpoint calls Collector.Collect directly (see
+	// internal/api/refresh_adapter.go) — it never consults the scheduler's
+	// cooldown registry, so a provider mid-cooldown still gets attempted.
+	collector := NewCollector(stack.providers, stack.credentials, stack.db)
+	if _, err := collector.Collect(ctx, "no-creds-provider"); err != nil {
+		t.Fatalf("Collect() returned error: %v", err)
+	}
+	if fetcher.CallCount() != 1 {
+		t.Fatalf("expected the refresh path to attempt the upstream call despite an active cooldown, got %d calls", fetcher.CallCount())
+	}
+}
+
 func TestScheduler_RunReturnsPromptlyOnAlreadyCancelledContext(t *testing.T) {
 	t.Parallel()
 
@@ -155,7 +271,7 @@ func TestScheduler_RunReturnsPromptlyOnAlreadyCancelledContext(t *testing.T) {
 
 	stack := newTestStack(t)
 	collector := NewCollector(stack.providers, stack.credentials, stack.db)
-	s := New(stack.providers, collector, time.Hour, time.Second)
+	s := New(stack.providers, collector, time.Hour, time.Second, NewAuthCooldownRegistry(time.Hour, time.Hour))
 
 	done := make(chan struct{})
 	go func() {

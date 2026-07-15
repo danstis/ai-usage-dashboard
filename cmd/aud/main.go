@@ -37,6 +37,11 @@ const (
 	// scheduler tick or on-demand refresh, so one slow/hanging upstream
 	// can't stall collection of the rest.
 	fetchTimeout = 30 * time.Second
+	// maxAuthCooldown caps the scheduler's exponential auth-failure backoff
+	// (see internal/scheduler.AuthCooldownRegistry) so a provider stuck with
+	// a bad key is retried at least this often once operator attention
+	// fixes it, rather than backing off indefinitely.
+	maxAuthCooldown = time.Hour
 )
 
 func main() {
@@ -94,7 +99,23 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("reconcile providers: %w", err)
 	}
 
-	credentialSvc := credential.NewService(db, cfg.masterKey)
+	// Register one Fetcher per live provider here, immediately after
+	// Reconcile and before the scheduler starts below — see the
+	// register-at-boot pattern in docs/providers.md. A provider is "live"
+	// (Provider.Live in the API) iff it's registered here; a scaffolded
+	// metadata-only entry adds no registration.
+	//
+	//   providerSvc.RegisterFetcher(<pkg>.New())
+	//
+	// No provider is live yet in this slice (P3.0); BSOD-65..69 add the
+	// first ones.
+
+	// authCooldown is instantiated once and shared: the scheduler gates its
+	// tick path on it, and the credential service clears a provider's entry
+	// on a successful credential set so the next tick retries immediately
+	// instead of waiting out the remaining backoff window.
+	authCooldown := scheduler.NewAuthCooldownRegistry(cfg.pollInterval, maxAuthCooldown)
+	credentialSvc := credential.NewService(db, cfg.masterKey, authCooldown)
 	collector := scheduler.NewCollector(providerSvc, credentialSvc, db)
 
 	httpServer := &http.Server{
@@ -120,7 +141,7 @@ func run(ctx context.Context) error {
 	// scheduler, then wait for its goroutine to actually stop, then close
 	// db — so the scheduler never touches a closed store and never leaks.
 	schedCtx, cancelScheduler := context.WithCancel(ctx)
-	sched := scheduler.New(providerSvc, collector, cfg.pollInterval, fetchTimeout)
+	sched := scheduler.New(providerSvc, collector, cfg.pollInterval, fetchTimeout, authCooldown)
 	var wg sync.WaitGroup
 	wg.Go(func() { sched.Run(schedCtx) })
 	defer wg.Wait()

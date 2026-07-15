@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/danstis/ai-usage-dashboard/internal/credential"
 	"github.com/danstis/ai-usage-dashboard/internal/provider"
@@ -32,6 +33,7 @@ type testStack struct {
 	db          store.Store
 	providers   *provider.Service
 	credentials *credential.Service
+	cooldown    *AuthCooldownRegistry
 }
 
 // newTestStack opens a temp sqlite store, reconciles testRegistry into it,
@@ -54,10 +56,11 @@ func newTestStack(t *testing.T) testStack {
 		t.Fatalf("reconcile: %v", err)
 	}
 
+	cooldown := NewAuthCooldownRegistry(time.Hour, time.Hour)
 	key := make([]byte, 32)
-	credentialSvc := credential.NewService(db, key)
+	credentialSvc := credential.NewService(db, key, cooldown)
 
-	return testStack{db: db, providers: providerSvc, credentials: credentialSvc}
+	return testStack{db: db, providers: providerSvc, credentials: credentialSvc, cooldown: cooldown}
 }
 
 func setupNoCredsProviderFetcher(t *testing.T, stack testStack, metrics []provider.UsageMetric) *providertest.Fetcher {

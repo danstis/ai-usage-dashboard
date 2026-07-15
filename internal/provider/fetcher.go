@@ -29,6 +29,14 @@ import (
 // Fetcher has been registered for it (a metadata-only provider).
 var ErrFetcherNotFound = errors.New("provider: no Fetcher registered")
 
+// ErrAuth is the sentinel a Fetcher must wrap (via fmt.Errorf("...: %w",
+// ErrAuth)) when a provider rejects credentials as invalid (HTTP 401/403 or
+// the provider's equivalent). The scheduler detects it via errors.Is and
+// engages the auth-failure backoff (internal/scheduler) so a bad key doesn't
+// get hammered every tick; POST /providers/{id}/refresh always attempts
+// regardless of this sentinel.
+var ErrAuth = errors.New("provider: authentication failed")
+
 // UsageMetric is one usage data point returned by a Fetcher.
 //
 // All required fields are non-empty strings or non-negative integers; no
@@ -108,6 +116,14 @@ func (r *runtimeRegistry) lookup(id string) (Fetcher, error) {
 	return f, nil
 }
 
+// has reports whether a non-nil Fetcher is registered under id.
+func (r *runtimeRegistry) has(id string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	f, ok := r.fetch[id]
+	return ok && f != nil
+}
+
 // RegisterFetcher adds f to the Service's runtime registry, keyed by
 // f.Metadata().ID. It panics on duplicate registration so misconfiguration
 // is caught at boot rather than silently shadowing an existing fetcher. It
@@ -122,6 +138,15 @@ func (s *Service) RegisterFetcher(f Fetcher) {
 		panic(fmt.Sprintf("provider: RegisterFetcher: id %q is not present in the metadata registry", id))
 	}
 	s.fetchers.register(id, f)
+}
+
+// HasFetcher reports whether a Fetcher is currently registered for id. This
+// is the single condition that defines "live" (Provider.Live, §1): a
+// metadata-only id with no registered Fetcher is a scaffolded provider, not
+// a live one. It does not consult the metadata registry — an unknown id
+// simply has no Fetcher and returns false.
+func (s *Service) HasFetcher(id string) bool {
+	return s.fetchers.has(id)
 }
 
 // FetchUsage invokes the registered Fetcher for id with the given

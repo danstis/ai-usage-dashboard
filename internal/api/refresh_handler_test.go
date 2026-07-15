@@ -49,7 +49,7 @@ func newRefreshTestHandler(t *testing.T) (http.Handler, *provider.Service, *cred
 	}
 
 	key := make([]byte, 32)
-	credentialSvc := credential.NewService(db, key)
+	credentialSvc := credential.NewService(db, key, nil)
 	collector := scheduler.NewCollector(providerSvc, credentialSvc, db)
 
 	handler := NewHandler(
