@@ -57,31 +57,41 @@ func newTestFetcher(t *testing.T, srv *httptest.Server, now time.Time) *fetcher 
 	return f
 }
 
-func TestFetchUsage_SuccessMapsToTwoWindowMetrics(t *testing.T) {
-	t.Parallel()
-
-	reset5h := time.Date(2026, 7, 15, 17, 0, 0, 0, time.UTC)
-	resetWeek := time.Date(2026, 7, 20, 17, 0, 0, 0, time.UTC)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			t.Errorf("expected GET, got %s", r.Method)
-		}
-		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
-			t.Errorf("expected Bearer test-key, got %q", got)
-		}
-		_, _ = io.WriteString(w, `{
+// successResponseJSON is the canned body the success-path scenarios share.
+// Hoisted into a const so the per-test closures stay tiny — SonarGo S3776
+// counts closure bodies against the enclosing test function's complexity,
+// so the JSON literal stays outside the handler closure.
+const successResponseJSON = `{
   "base_resp": {"status_code": 0, "status_msg": "success"},
   "data": {
     "current_5h": {"remains": 4000, "limit": 5000, "reset_at": "2026-07-15T17:00:00Z"},
     "current_week": {"remains": 40000, "limit": 50000, "reset_at": "2026-07-20T17:00:00Z"}
   }
-}`)
+}`
+
+// successTestBearerKey is the Subscription Key value the success-path
+// server checks for. Used in both the handler setup (no assertion) and
+// assertGetBearerRequest (the assertion), so a single source of truth
+// prevents drift.
+const successTestBearerKey = "test-key"
+
+func TestFetchUsage_SuccessMapsToTwoWindowMetrics(t *testing.T) {
+	t.Parallel()
+
+	reset5h := time.Date(2026, 7, 15, 17, 0, 0, 0, time.UTC)
+	resetWeek := time.Date(2026, 7, 20, 17, 0, 0, 0, time.UTC)
+	now := reset5h.Add(-5 * time.Hour)
+
+	var captured *http.Request
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		captured = r
+		_, _ = io.WriteString(w, successResponseJSON)
 	}))
 	defer srv.Close()
 
-	f := newTestFetcher(t, srv, time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC))
+	f := newTestFetcher(t, srv, now)
 
-	got, err := f.FetchUsage(context.Background(), map[string]string{"subscription_key": "test-key"})
+	got, err := f.FetchUsage(context.Background(), map[string]string{"subscription_key": successTestBearerKey})
 	if err != nil {
 		t.Fatalf("FetchUsage() returned error: %v", err)
 	}
@@ -89,6 +99,12 @@ func TestFetchUsage_SuccessMapsToTwoWindowMetrics(t *testing.T) {
 		t.Fatalf("expected 2 metrics, got %d: %+v", len(got), got)
 	}
 
+	// Every per-scenario assertion lives in a NAMED helper below so the
+	// t.Run closures themselves stay branch-free — SonarGo S3776 sums
+	// nested-closure cognitive complexity into the enclosing function, so
+	// pulling the ifs out of the closures is what actually moves the
+	// complexity needle.
+	t.Run("request_shape", func(t *testing.T) { assertGetBearerRequest(t, captured) })
 	t.Run("5h_metric_identity", func(t *testing.T) {
 		assertMetric(t, got[0], metricExpectation{
 			Name:   "token_plan_5h",
@@ -98,19 +114,8 @@ func TestFetchUsage_SuccessMapsToTwoWindowMetrics(t *testing.T) {
 			Limit:  ptr(int64(5000)),
 		})
 	})
-
-	t.Run("5h_metric_reset", func(t *testing.T) {
-		if got[0].ResetAt == nil || !got[0].ResetAt.Equal(reset5h) {
-			t.Errorf("metric[0] ResetAt = %v, want %v", got[0].ResetAt, reset5h)
-		}
-	})
-
-	t.Run("5h_metric_remaining", func(t *testing.T) {
-		if got[0].Remaining == nil || *got[0].Remaining != 4000 {
-			t.Errorf("metric[0] Remaining = %v, want 4000", got[0].Remaining)
-		}
-	})
-
+	t.Run("5h_metric_reset", func(t *testing.T) { assertWindowReset(t, got[0], reset5h, "metric[0]") })
+	t.Run("5h_metric_remaining", func(t *testing.T) { assertRemaining(t, got[0], 4000, "metric[0]") })
 	t.Run("weekly_metric_identity", func(t *testing.T) {
 		assertMetric(t, got[1], metricExpectation{
 			Name:   "token_plan_weekly",
@@ -120,18 +125,8 @@ func TestFetchUsage_SuccessMapsToTwoWindowMetrics(t *testing.T) {
 			Limit:  ptr(int64(50000)),
 		})
 	})
-
-	t.Run("weekly_metric_remaining", func(t *testing.T) {
-		if got[1].Remaining == nil || *got[1].Remaining != 40000 {
-			t.Errorf("metric[1] Remaining = %v, want 40000", got[1].Remaining)
-		}
-	})
-
-	t.Run("weekly_metric_reset", func(t *testing.T) {
-		if got[1].ResetAt == nil || !got[1].ResetAt.Equal(resetWeek) {
-			t.Errorf("metric[1] ResetAt = %v, want %v", got[1].ResetAt, resetWeek)
-		}
-	})
+	t.Run("weekly_metric_remaining", func(t *testing.T) { assertRemaining(t, got[1], 40000, "metric[1]") })
+	t.Run("weekly_metric_reset", func(t *testing.T) { assertWindowReset(t, got[1], resetWeek, "metric[1]") })
 }
 
 // metricExpectation captures the per-metric assertions the success-path
@@ -167,6 +162,38 @@ func assertMetric(t *testing.T, m provider.UsageMetric, want metricExpectation) 
 	}
 	if m.Limit != nil && *m.Limit != *want.Limit {
 		t.Errorf("Limit = %d, want %d", *m.Limit, *want.Limit)
+	}
+}
+
+// assertGetBearerRequest validates that r was a GET carrying the expected
+// Bearer Authorization header. Lives outside the test function so its
+// branches do not count against the parent test's S3776 budget.
+func assertGetBearerRequest(t *testing.T, r *http.Request) {
+	t.Helper()
+	if r == nil {
+		t.Fatal("server received no request")
+	}
+	if r.Method != http.MethodGet {
+		t.Errorf("expected GET, got %s", r.Method)
+	}
+	if got := r.Header.Get("Authorization"); got != "Bearer "+successTestBearerKey {
+		t.Errorf("expected Bearer %s, got %q", successTestBearerKey, got)
+	}
+}
+
+// assertWindowReset validates metric.ResetAt matches want exactly.
+func assertWindowReset(t *testing.T, m provider.UsageMetric, want time.Time, label string) {
+	t.Helper()
+	if m.ResetAt == nil || !m.ResetAt.Equal(want) {
+		t.Errorf("%s ResetAt = %v, want %v", label, m.ResetAt, want)
+	}
+}
+
+// assertRemaining validates metric.Remaining equals want.
+func assertRemaining(t *testing.T, m provider.UsageMetric, want int64, label string) {
+	t.Helper()
+	if m.Remaining == nil || *m.Remaining != want {
+		t.Errorf("%s Remaining = %v, want %d", label, m.Remaining, want)
 	}
 }
 
