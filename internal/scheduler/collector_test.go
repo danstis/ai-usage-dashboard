@@ -154,13 +154,9 @@ func TestCollector_ProviderWithNoCredentialFieldsNeedsNoCredentials(t *testing.T
 
 	ctx := context.Background()
 	stack := newTestStack(t)
-	if _, err := stack.providers.SetEnabled(ctx, "no-creds-provider", true); err != nil {
-		t.Fatalf("enable: %v", err)
-	}
-	f := providertest.NewFetcher(provider.Metadata{ID: "no-creds-provider"}, []provider.UsageMetric{
+	f := setupNoCredsProviderFetcher(t, stack, []provider.UsageMetric{
 		{Name: "requests", Window: "day", Unit: "count", Used: 1},
 	})
-	stack.providers.RegisterFetcher(f)
 
 	c := NewCollector(stack.providers, stack.credentials, stack.db)
 	snap, err := c.Collect(ctx, "no-creds-provider")
@@ -180,13 +176,9 @@ func TestCollector_SecondCollectReplacesSnapshot(t *testing.T) {
 
 	ctx := context.Background()
 	stack := newTestStack(t)
-	if _, err := stack.providers.SetEnabled(ctx, "no-creds-provider", true); err != nil {
-		t.Fatalf("enable: %v", err)
-	}
-	f := providertest.NewFetcher(provider.Metadata{ID: "no-creds-provider"}, []provider.UsageMetric{
+	f := setupNoCredsProviderFetcher(t, stack, []provider.UsageMetric{
 		{Name: "requests", Window: "day", Unit: "count", Used: 1},
 	})
-	stack.providers.RegisterFetcher(f)
 	c := NewCollector(stack.providers, stack.credentials, stack.db)
 
 	if _, err := c.Collect(ctx, "no-creds-provider"); err != nil {

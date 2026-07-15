@@ -59,16 +59,6 @@ func TestScheduler_FailingProviderDoesNotStopOtherCollections(t *testing.T) {
 
 	ctx := context.Background()
 	stack := newTestStack(t)
-	if _, err := stack.providers.SetEnabled(ctx, "no-creds-provider", true); err != nil {
-		t.Fatalf("enable no-creds-provider: %v", err)
-	}
-	if _, err := stack.providers.SetEnabled(ctx, "fake-provider", true); err != nil {
-		t.Fatalf("enable fake-provider: %v", err)
-	}
-	if err := stack.credentials.SetValues(ctx, "fake-provider", map[string]string{"api_key": "k"}); err != nil {
-		t.Fatalf("set credentials: %v", err)
-	}
-
 	failing := providertest.NewFetcher(provider.Metadata{ID: "no-creds-provider"}, nil)
 	failing.SetError(errors.New("upstream timeout"))
 	succeeding := providertest.NewFetcher(provider.Metadata{
@@ -77,8 +67,7 @@ func TestScheduler_FailingProviderDoesNotStopOtherCollections(t *testing.T) {
 			{Name: "api_key", Label: "API Key", Secret: true},
 		},
 	}, []provider.UsageMetric{{Name: "requests", Window: "day", Unit: "count", Used: 5}})
-	stack.providers.RegisterFetcher(failing)
-	stack.providers.RegisterFetcher(succeeding)
+	setupTwoProviderScenario(t, stack, failing, succeeding)
 
 	collector := NewCollector(stack.providers, stack.credentials, stack.db)
 	s := New(stack.providers, collector, time.Hour, time.Second)
@@ -102,15 +91,6 @@ func TestScheduler_UnregisteredFetcherDoesNotStopOtherCollections(t *testing.T) 
 
 	ctx := context.Background()
 	stack := newTestStack(t)
-	if _, err := stack.providers.SetEnabled(ctx, "no-creds-provider", true); err != nil {
-		t.Fatalf("enable no-creds-provider: %v", err)
-	}
-	if _, err := stack.providers.SetEnabled(ctx, "fake-provider", true); err != nil {
-		t.Fatalf("enable fake-provider: %v", err)
-	}
-	if err := stack.credentials.SetValues(ctx, "fake-provider", map[string]string{"api_key": "k"}); err != nil {
-		t.Fatalf("set credentials: %v", err)
-	}
 	// Deliberately register no Fetcher for no-creds-provider.
 	succeeding := providertest.NewFetcher(provider.Metadata{
 		ID: "fake-provider",
@@ -118,7 +98,7 @@ func TestScheduler_UnregisteredFetcherDoesNotStopOtherCollections(t *testing.T) 
 			{Name: "api_key", Label: "API Key", Secret: true},
 		},
 	}, []provider.UsageMetric{{Name: "requests", Window: "day", Unit: "count", Used: 9}})
-	stack.providers.RegisterFetcher(succeeding)
+	setupTwoProviderScenario(t, stack, nil, succeeding)
 
 	collector := NewCollector(stack.providers, stack.credentials, stack.db)
 	s := New(stack.providers, collector, time.Hour, time.Second)

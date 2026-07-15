@@ -7,6 +7,7 @@ import (
 
 	"github.com/danstis/ai-usage-dashboard/internal/credential"
 	"github.com/danstis/ai-usage-dashboard/internal/provider"
+	"github.com/danstis/ai-usage-dashboard/internal/providertest"
 	"github.com/danstis/ai-usage-dashboard/internal/store"
 	"github.com/danstis/ai-usage-dashboard/internal/store/sqlite"
 )
@@ -57,4 +58,36 @@ func newTestStack(t *testing.T) testStack {
 	credentialSvc := credential.NewService(db, key)
 
 	return testStack{db: db, providers: providerSvc, credentials: credentialSvc}
+}
+
+func setupNoCredsProviderFetcher(t *testing.T, stack testStack, metrics []provider.UsageMetric) *providertest.Fetcher {
+	t.Helper()
+
+	if _, err := stack.providers.SetEnabled(context.Background(), "no-creds-provider", true); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	fetcher := providertest.NewFetcher(provider.Metadata{ID: "no-creds-provider"}, metrics)
+	stack.providers.RegisterFetcher(fetcher)
+	return fetcher
+}
+
+func setupTwoProviderScenario(t *testing.T, stack testStack, noCredsFetcher, fakeProviderFetcher *providertest.Fetcher) {
+	t.Helper()
+
+	ctx := context.Background()
+	if _, err := stack.providers.SetEnabled(ctx, "no-creds-provider", true); err != nil {
+		t.Fatalf("enable no-creds-provider: %v", err)
+	}
+	if _, err := stack.providers.SetEnabled(ctx, "fake-provider", true); err != nil {
+		t.Fatalf("enable fake-provider: %v", err)
+	}
+	if err := stack.credentials.SetValues(ctx, "fake-provider", map[string]string{"api_key": "k"}); err != nil {
+		t.Fatalf("set credentials: %v", err)
+	}
+	if noCredsFetcher != nil {
+		stack.providers.RegisterFetcher(noCredsFetcher)
+	}
+	if fakeProviderFetcher != nil {
+		stack.providers.RegisterFetcher(fakeProviderFetcher)
+	}
 }
