@@ -89,35 +89,84 @@ func TestFetchUsage_SuccessMapsToTwoWindowMetrics(t *testing.T) {
 		t.Fatalf("expected 2 metrics, got %d: %+v", len(got), got)
 	}
 
-	fiveH := got[0]
-	if fiveH.Name != "token_plan_5h" || fiveH.Window != "5h" {
-		t.Errorf("metric[0] identity mismatch: got %+v", fiveH)
-	}
-	if fiveH.Unit != "prompts" {
-		t.Errorf("metric[0] Unit = %q, want %q", fiveH.Unit, "prompts")
-	}
-	if fiveH.Used != 1000 {
-		t.Errorf("metric[0] Used = %d, want 1000 (limit 5000 - remains 4000)", fiveH.Used)
-	}
-	if fiveH.Limit == nil || *fiveH.Limit != 5000 {
-		t.Errorf("metric[0] Limit = %v, want 5000", fiveH.Limit)
-	}
-	if fiveH.Remaining == nil || *fiveH.Remaining != 4000 {
-		t.Errorf("metric[0] Remaining = %v, want 4000", fiveH.Remaining)
-	}
-	if fiveH.ResetAt == nil || !fiveH.ResetAt.Equal(reset5h) {
-		t.Errorf("metric[0] ResetAt = %v, want %v", fiveH.ResetAt, reset5h)
-	}
+	t.Run("5h_metric_identity", func(t *testing.T) {
+		assertMetric(t, got[0], metricExpectation{
+			Name:   "token_plan_5h",
+			Window: "5h",
+			Unit:   "prompts",
+			Used:   1000,
+			Limit:  ptr(int64(5000)),
+		})
+	})
 
-	week := got[1]
-	if week.Name != "token_plan_weekly" || week.Window != "week" {
-		t.Errorf("metric[1] identity mismatch: got %+v", week)
+	t.Run("5h_metric_reset", func(t *testing.T) {
+		if got[0].ResetAt == nil || !got[0].ResetAt.Equal(reset5h) {
+			t.Errorf("metric[0] ResetAt = %v, want %v", got[0].ResetAt, reset5h)
+		}
+	})
+
+	t.Run("5h_metric_remaining", func(t *testing.T) {
+		if got[0].Remaining == nil || *got[0].Remaining != 4000 {
+			t.Errorf("metric[0] Remaining = %v, want 4000", got[0].Remaining)
+		}
+	})
+
+	t.Run("weekly_metric_identity", func(t *testing.T) {
+		assertMetric(t, got[1], metricExpectation{
+			Name:   "token_plan_weekly",
+			Window: "week",
+			Unit:   "prompts",
+			Used:   10000,
+			Limit:  ptr(int64(50000)),
+		})
+	})
+
+	t.Run("weekly_metric_remaining", func(t *testing.T) {
+		if got[1].Remaining == nil || *got[1].Remaining != 40000 {
+			t.Errorf("metric[1] Remaining = %v, want 40000", got[1].Remaining)
+		}
+	})
+
+	t.Run("weekly_metric_reset", func(t *testing.T) {
+		if got[1].ResetAt == nil || !got[1].ResetAt.Equal(resetWeek) {
+			t.Errorf("metric[1] ResetAt = %v, want %v", got[1].ResetAt, resetWeek)
+		}
+	})
+}
+
+// metricExpectation captures the per-metric assertions the success-path
+// sub-tests reuse. ResetAt is asserted separately in its own sub-test
+// because it's the only time-sensitive field and a separate scenario
+// makes a failure easier to localise.
+type metricExpectation struct {
+	Name   string
+	Window string
+	Unit   string
+	Used   int64
+	Limit  *int64
+}
+
+// assertMetric is the shared single-scenario assertion helper for
+// TestFetchUsage_SuccessMapsToTwoWindowMetrics. Kept tiny on purpose —
+// every per-field check that goes through this helper stays under the
+// S3776 cognitive-complexity threshold for the caller, and the helper
+// itself is a flat field-by-field comparison.
+func assertMetric(t *testing.T, m provider.UsageMetric, want metricExpectation) {
+	t.Helper()
+	if m.Name != want.Name || m.Window != want.Window {
+		t.Errorf("identity mismatch: got {Name:%q Window:%q}, want {Name:%q Window:%q}", m.Name, m.Window, want.Name, want.Window)
 	}
-	if week.Used != 10000 || week.Limit == nil || *week.Limit != 50000 || week.Remaining == nil || *week.Remaining != 40000 {
-		t.Errorf("metric[1] numeric fields mismatch: got %+v", week)
+	if m.Unit != want.Unit {
+		t.Errorf("Unit = %q, want %q", m.Unit, want.Unit)
 	}
-	if week.ResetAt == nil || !week.ResetAt.Equal(resetWeek) {
-		t.Errorf("metric[1] ResetAt = %v, want %v", week.ResetAt, resetWeek)
+	if m.Used != want.Used {
+		t.Errorf("Used = %d, want %d", m.Used, want.Used)
+	}
+	if (m.Limit == nil) != (want.Limit == nil) {
+		t.Fatalf("Limit nilness mismatch: got %v, want %v", m.Limit, want.Limit)
+	}
+	if m.Limit != nil && *m.Limit != *want.Limit {
+		t.Errorf("Limit = %d, want %d", *m.Limit, *want.Limit)
 	}
 }
 

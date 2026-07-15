@@ -49,17 +49,19 @@ func Metadata() provider.Metadata {
 	}
 }
 
-// HTTPClient is the subset of *http.Client the plugin uses. It exists so
-// tests can inject httptest.Server-backed transports without touching the
-// global DefaultClient.
-type HTTPClient interface {
+// HTTPDoer is the subset of *http.Client the plugin uses. It exists so tests
+// can inject httptest.Server-backed transports without touching the global
+// DefaultClient. Named with the -er convention enforced by godre:S8196 for
+// single-method interfaces (see sonar-project.properties / PR Review
+// Sentinel comments for the original naming).
+type HTTPDoer interface {
 	Do(*http.Request) (*http.Response, error)
 }
 
 // fetcher is the production provider.Fetcher implementation for Minimax.
 type fetcher struct {
 	meta     provider.Metadata
-	client   HTTPClient
+	client   HTTPDoer
 	endpoint string
 	now      func() time.Time
 }
@@ -74,7 +76,7 @@ func New() provider.Fetcher {
 
 // NewWithClient returns a provider.Fetcher backed by client. Tests use it
 // to inject httptest.Server-backed transports; production callers use New.
-func NewWithClient(client HTTPClient) provider.Fetcher {
+func NewWithClient(client HTTPDoer) provider.Fetcher {
 	return &fetcher{
 		meta:     Metadata(),
 		client:   client,
