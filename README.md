@@ -262,6 +262,7 @@ for the planned future shape).
 | ----------- | ------------ | ----------------------------------- |
 | `openai`    | OpenAI       | `api_key` (`Secret = true`)         |
 | `anthropic` | Anthropic    | `api_key` (`Secret = true`)         |
+| `minimax`   | Minimax      | `subscription_key` (`Secret = true`) — first live plugin (BSOD-68); see `internal/plugins/minimax/`. |
 
 The `api_key` value for each provider is set at runtime via
 `PUT /api/v1/providers/{id}/credentials` (see [HTTP API](#http-api)) and
