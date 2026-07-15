@@ -33,10 +33,19 @@ func (stubUsageGetter) GetUsage(_ context.Context, _ string) (UsageSnapshot, err
 	return UsageSnapshot{}, nil
 }
 
-// newHandler builds a handler with no-op CredentialRepository and
-// UsageGetter stubs, for tests that only exercise the provider endpoints.
+// stubUsageRefresher is a no-op test double for UsageRefresher, sufficient
+// for handler tests that don't exercise the refresh endpoint.
+type stubUsageRefresher struct{}
+
+func (stubUsageRefresher) RefreshUsage(_ context.Context, _ string) (UsageSnapshot, error) {
+	return UsageSnapshot{}, nil
+}
+
+// newHandler builds a handler with no-op CredentialRepository, UsageGetter,
+// and UsageRefresher stubs, for tests that only exercise the provider
+// endpoints.
 func newHandler(providers ProviderRepository) http.Handler {
-	return NewHandler(providers, stubCredentialRepository{}, stubUsageGetter{})
+	return NewHandler(providers, stubCredentialRepository{}, stubUsageGetter{}, stubUsageRefresher{})
 }
 
 // assertStatus fails the test if rec.Code does not equal want.

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/danstis/ai-usage-dashboard/internal/provider"
+	"github.com/danstis/ai-usage-dashboard/internal/providertest"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/getkin/kin-openapi/routers"
@@ -165,6 +167,57 @@ func TestContract_CredentialEndpointsConformToSpec(t *testing.T) {
 			handler.ServeHTTP(rec, newBodyReq(tc.method, tc.path, tc.body, tc.contentType))
 
 			assertConformsToSpec(t, router, newBodyReq(tc.method, tc.path, tc.body, tc.contentType), rec)
+		})
+	}
+}
+
+func TestContract_RefreshEndpointConformsToSpec(t *testing.T) {
+	t.Parallel()
+
+	router := loadSpecRouter(t)
+	handler, providerSvc, credentialSvc := newRefreshTestHandler(t)
+
+	fetcher := providertest.NewFetcher(
+		provider.Metadata{
+			ID:   "openai",
+			Name: "OpenAI",
+			CredentialFields: []provider.CredentialField{
+				{Name: "api_key", Label: "API Key", Secret: true},
+			},
+		},
+		[]provider.UsageMetric{{Name: "monthly_spend", Window: "month", Unit: "usd_cents", Used: 100}},
+	)
+	providerSvc.RegisterFetcher(fetcher)
+
+	cases := []struct {
+		name   string
+		method string
+		path   string
+		setup  func(t *testing.T)
+	}{
+		{"unknown provider is 404", http.MethodPost, "/api/v1/providers/does-not-exist/refresh", nil},
+		{"disabled provider is 409", http.MethodPost, "/api/v1/providers/openai/refresh", nil},
+		{"uncredentialed enabled provider is 409", http.MethodPost, "/api/v1/providers/openai/refresh", func(t *testing.T) {
+			if _, err := providerSvc.SetEnabled(context.Background(), "openai", true); err != nil {
+				t.Fatalf("enable: %v", err)
+			}
+		}},
+		{"successful refresh is 200", http.MethodPost, "/api/v1/providers/openai/refresh", func(t *testing.T) {
+			if err := credentialSvc.SetValues(context.Background(), "openai", map[string]string{"api_key": "v"}); err != nil {
+				t.Fatalf("set credentials: %v", err)
+			}
+		}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.setup != nil {
+				tc.setup(t)
+			}
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.path, nil))
+
+			assertConformsToSpec(t, router, httptest.NewRequest(tc.method, tc.path, nil), rec)
 		})
 	}
 }

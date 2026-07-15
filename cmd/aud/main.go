@@ -11,12 +11,14 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/danstis/ai-usage-dashboard/internal/api"
 	"github.com/danstis/ai-usage-dashboard/internal/credential"
 	"github.com/danstis/ai-usage-dashboard/internal/provider"
+	"github.com/danstis/ai-usage-dashboard/internal/scheduler"
 	"github.com/danstis/ai-usage-dashboard/internal/server"
 	"github.com/danstis/ai-usage-dashboard/internal/store/sqlite"
 )
@@ -31,6 +33,10 @@ const (
 	writeTimeout        = 10 * time.Second
 	idleTimeout         = 60 * time.Second
 	shutdownTimeout     = 10 * time.Second
+	// fetchTimeout bounds a single provider's FetchUsage call within one
+	// scheduler tick or on-demand refresh, so one slow/hanging upstream
+	// can't stall collection of the rest.
+	fetchTimeout = 30 * time.Second
 )
 
 func main() {
@@ -89,15 +95,36 @@ func run(ctx context.Context) error {
 	}
 
 	credentialSvc := credential.NewService(db, cfg.masterKey)
+	collector := scheduler.NewCollector(providerSvc, credentialSvc, db)
 
 	httpServer := &http.Server{
-		Addr:              ":" + cfg.port,
-		Handler:           server.New(api.NewProviderRepository(providerSvc), api.NewCredentialRepository(providerSvc, credentialSvc), api.NewUsageGetter(providerSvc, db)),
+		Addr: ":" + cfg.port,
+		Handler: server.New(
+			api.NewProviderRepository(providerSvc),
+			api.NewCredentialRepository(providerSvc, credentialSvc),
+			api.NewUsageGetter(providerSvc, db),
+			api.NewUsageRefresher(collector),
+		),
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       readTimeout,
 		WriteTimeout:      writeTimeout,
 		IdleTimeout:       idleTimeout,
 	}
+
+	// The scheduler is started after provider reconcile, on a context
+	// derived from ctx so it stops on the same SIGINT/SIGTERM shutdown
+	// signal — but with its own cancel so run() can stop it on every exit
+	// path, not just a caller-driven ctx cancellation (e.g. the listener
+	// failing to bind never cancels ctx itself). Defers run LIFO, and are
+	// registered here in reverse of the order they must execute: cancel the
+	// scheduler, then wait for its goroutine to actually stop, then close
+	// db — so the scheduler never touches a closed store and never leaks.
+	schedCtx, cancelScheduler := context.WithCancel(ctx)
+	sched := scheduler.New(providerSvc, collector, cfg.pollInterval, fetchTimeout)
+	var wg sync.WaitGroup
+	wg.Go(func() { sched.Run(schedCtx) })
+	defer wg.Wait()
+	defer cancelScheduler()
 
 	serveErr := make(chan error, 1)
 	go func() {

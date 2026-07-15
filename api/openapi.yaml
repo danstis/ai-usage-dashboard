@@ -166,6 +166,30 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
+  /providers/{id}/refresh:
+    post:
+      operationId: refreshProviderUsage
+      tags: [providers]
+      summary: >-
+        Synchronously fetch fresh usage for a provider right now and persist
+        it as the new latest snapshot (replacing any previous one), returning
+        the result. The provider must be enabled and fully credentialed —
+        otherwise the request conflicts with the provider's current state.
+      parameters:
+        - $ref: "#/components/parameters/ProviderId"
+      responses:
+        "200":
+          description: The freshly collected usage snapshot for the provider.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageSnapshot"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   parameters:
     ProviderId:
@@ -329,6 +353,14 @@ components:
   responses:
     NotFound:
       description: The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: >-
+        The request conflicts with the provider's current state (e.g. it is
+        disabled or missing required credentials).
       content:
         application/json:
           schema:

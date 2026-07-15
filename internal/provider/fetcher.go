@@ -110,9 +110,18 @@ func (r *runtimeRegistry) lookup(id string) (Fetcher, error) {
 
 // RegisterFetcher adds f to the Service's runtime registry, keyed by
 // f.Metadata().ID. It panics on duplicate registration so misconfiguration
-// is caught at boot rather than silently shadowing an existing fetcher.
+// is caught at boot rather than silently shadowing an existing fetcher. It
+// also panics if f.Metadata().ID is not present in the Service's metadata
+// registry: without this check a mistyped id would register successfully
+// but FetchUsage gates on s.metadata(id) first, so the fetcher would be
+// silently unreachable — the same failure class Reconcile already guards
+// against for the opposite direction (registry entries with no store row).
 func (s *Service) RegisterFetcher(f Fetcher) {
-	s.fetchers.register(f.Metadata().ID, f)
+	id := f.Metadata().ID
+	if _, ok := s.metadata(id); !ok {
+		panic(fmt.Sprintf("provider: RegisterFetcher: id %q is not present in the metadata registry", id))
+	}
+	s.fetchers.register(id, f)
 }
 
 // FetchUsage invokes the registered Fetcher for id with the given

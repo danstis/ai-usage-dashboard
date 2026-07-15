@@ -12,13 +12,14 @@ import (
 
 // New constructs the top-level HTTP handler for the service, serving the
 // provider registry endpoints from providers, the credential endpoints from
-// credentials, and the usage snapshot endpoint from snapshots.
-func New(providers api.ProviderRepository, credentials api.CredentialRepository, snapshots api.UsageGetter) http.Handler {
+// credentials, the usage snapshot endpoint from snapshots, and the
+// on-demand refresh endpoint from refresher.
+func New(providers api.ProviderRepository, credentials api.CredentialRepository, snapshots api.UsageGetter, refresher api.UsageRefresher) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealthz)
 	mux.HandleFunc("GET /swaggerui", docs.HandleUI)
 	mux.HandleFunc("GET /swaggerui/openapi.yaml", docs.HandleSpec)
-	mux.Handle("/api/v1/", api.NewHandler(providers, credentials, snapshots))
+	mux.Handle("/api/v1/", api.NewHandler(providers, credentials, snapshots, refresher))
 	return mux
 }
 
