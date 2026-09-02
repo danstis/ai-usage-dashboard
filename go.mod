@@ -3,7 +3,7 @@ module github.com/danstis/ai-usage-dashboard
 go 1.25.7
 
 require (
-	github.com/getkin/kin-openapi v0.142.0
+	github.com/getkin/kin-openapi v0.144.0
 	github.com/pressly/goose/v3 v3.27.2
 	modernc.org/sqlite v1.53.0
 )
